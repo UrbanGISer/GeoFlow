@@ -1,0 +1,25 @@
+# Local backup copy (duplicate of notebookflow)
+backup/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# Runtime artifacts
+backend/tmp/
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
