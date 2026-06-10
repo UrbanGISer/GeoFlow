@@ -1,10 +1,20 @@
-"""Convert notebook cells into a normalized workflow draft."""
+"""Convert notebook cells into a normalized, *runnable* workflow draft.
+
+v0.3: cells are analyzed with the `ast` module to recover real dataflow:
+- edges follow variable producer/consumer relationships, not cell order
+- cell code is wrapped so notebook variable names bridge to the
+  df_in/df_out node convention (imported workflows can actually run)
+- import-only cells are merged into the next code cell
+- IPython magics / shell escapes are stripped
+"""
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.default_nodes import DEFAULT_NODE_SPECS
@@ -23,24 +33,114 @@ def _edge_id(source: str, target: str, idx: int) -> str:
     return f"edge_{source}_{target}_{idx}"
 
 
-def _pick_builtin_spec(code: str, specs_by_id: dict[str, NodeSpec]) -> NodeSpec | None:
+def _strip_magics(source: str) -> str:
+    """Drop IPython magics / shell escapes that are not valid Python."""
+    lines: list[str] = []
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("%", "!")) or "get_ipython()" in stripped:
+            lines.append(f"# [magic removed] {stripped[:80]}")
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+@dataclass
+class CellInfo:
+    """Names a cell consumes from earlier cells and names it defines."""
+
+    free_names: set[str] = field(default_factory=set)
+    assigned_names: list[str] = field(default_factory=list)  # in assignment order
+    imported_names: set[str] = field(default_factory=set)
+    import_only: bool = False
+    parse_ok: bool = True
+    mentions_df_in: bool = False
+    mentions_df_out: bool = False
+
+
+def _analyze_cell(code: str) -> CellInfo:
+    info = CellInfo()
+    info.mentions_df_in = bool(re.search(r"\bdf_in\b", code))
+    info.mentions_df_out = bool(re.search(r"\bdf_out\b", code))
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        info.parse_ok = False
+        return info
+
+    assigned: set[str] = set()
+    import_only = True
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                name = (alias.asname or alias.name).split(".")[0]
+                assigned.add(name)
+                info.imported_names.add(name)
+            continue
+        import_only = False
+        # Uses before assignment within the cell count as external (free) names.
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if node.id not in assigned:
+                    info.free_names.add(node.id)
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                if node.id not in assigned:
+                    info.assigned_names.append(node.id)
+                assigned.add(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                assigned.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    name = (alias.asname or alias.name).split(".")[0]
+                    assigned.add(name)
+                    info.imported_names.add(name)
+    info.import_only = import_only
+    # Builtins / common module aliases are not data dependencies.
+    info.free_names -= info.imported_names
+    return info
+
+
+def _extract_path_param(code: str, func: str, exts: str) -> str | None:
+    m = re.search(rf"{func}\(([^)]*)\)", code)
+    if not m:
+        return None
+    path_match = re.search(rf"""['"]([^'"]+\.({exts}))['"]""", m.group(1), re.IGNORECASE)
+    return path_match.group(1) if path_match else None
+
+
+def _pick_builtin_spec(
+    code: str, specs_by_id: dict[str, NodeSpec]
+) -> tuple[NodeSpec | None, dict[str, Any]]:
+    """Map a cell to a builtin node only when its key params can be recovered,
+    so the resulting node is runnable without manual fixes."""
     src = code.lower()
-    if "read_file(" in src or "geopandas" in src or "gpd.read_file" in src:
-        return specs_by_id.get("geofile_reader")
     if "read_csv(" in src:
-        return specs_by_id.get("read_csv")
-    if "groupby(" in src:
-        return specs_by_id.get("groupby")
-    if "histogram" in src or "px.histogram" in src:
-        return specs_by_id.get("histogram")
-    if "folium." in src or "geojson" in src:
-        return specs_by_id.get("geomap")
-    if "query(" in src or ".loc[" in src or "filter" in src:
-        return specs_by_id.get("row_filter")
-    return None
+        path = _extract_path_param(code, r"read_csv", "csv|txt|tsv")
+        if path:
+            return specs_by_id.get("read_csv"), {"file_path": path}
+    if "read_file(" in src or "gpd.read_file" in src:
+        path = _extract_path_param(code, r"read_file", "shp|geojson|json|gpkg|zip")
+        if path:
+            return specs_by_id.get("geofile_reader"), {"file_path": path}
+    return None, {}
 
 
-def _temp_spec_from_code(code: str, idx: int) -> NodeSpec:
+def _wrap_cell_code(code: str, in_name: str | None, out_name: str | None, info: CellInfo) -> str:
+    """Bridge notebook variable names to the df_in/df_out node convention."""
+    parts: list[str] = []
+    if in_name and not info.mentions_df_in:
+        parts.append(f"{in_name} = df_in  # bridged from upstream node")
+    parts.append(code.rstrip())
+    if not info.mentions_df_out:
+        if out_name:
+            parts.append(f"df_out = {out_name}  # bridged to downstream nodes")
+        elif in_name:
+            parts.append(f"df_out = {in_name}  # pass-through")
+    return "\n".join(parts) + "\n"
+
+
+def _temp_spec_from_code(code: str, idx: int, summary: str) -> NodeSpec:
     node_id = f"tmp_nb_{idx + 1}"
     return NodeSpec(
         id=node_id,
@@ -52,9 +152,9 @@ def _temp_spec_from_code(code: str, idx: int) -> NodeSpec:
         outputs={"df_out": {"type": "DataFrame"}},
         parameters=[],
         default_params={},
-        default_code=code.strip() or "df_out = df_in.copy() if df_in is not None else None",
+        default_code=code.strip() + "\n" if code.strip() else "df_out = df_in.copy() if df_in is not None else None",
         temporary=True,
-        provenance={"source": "notebook_standardizer"},
+        provenance={"source": "notebook_standardizer", "summary": summary},
     )
 
 
@@ -118,52 +218,93 @@ def standardize_notebook(
     workflow_nodes: list[WorkflowNode] = []
     workflow_edges: list[WorkflowEdge] = []
 
-    for idx, cell in enumerate(code_cells):
-        code = cell.source.strip()
-        picked = _pick_builtin_spec(code, specs_by_id)
-        node_id = _next_id("nb", idx)
-        if picked is None:
-            temp_spec = _temp_spec_from_code(code, idx)
+    # variable name -> (node_id, position in chain) of its most recent producer
+    producers: dict[str, str] = {}
+    pending_imports: list[str] = []
+    last_node_id: str | None = None
+    node_idx = 0
+
+    for cell in code_cells:
+        code = _strip_magics(cell.source).strip()
+        if not code:
+            continue
+        info = _analyze_cell(code)
+
+        if info.parse_ok and info.import_only:
+            pending_imports.append(code)
+            continue
+
+        if pending_imports:
+            code = "\n".join([*pending_imports, code])
+            pending_imports = []
+            info = _analyze_cell(code)
+
+        node_id = _next_id("nb", node_idx)
+
+        # Resolve the upstream node via real dataflow when possible.
+        dep_names = [n for n in info.free_names if n in producers]
+        in_name: str | None = None
+        upstream_node: str | None = None
+        if dep_names:
+            # Most recently produced dependency wins the single df_in port.
+            dep_names.sort(key=lambda n: list(producers.keys()).index(n))
+            in_name = dep_names[-1]
+            upstream_node = producers[in_name]
+            extra = [n for n in dep_names if producers[n] != upstream_node]
+            if extra:
+                warnings.append(
+                    f"Cell {node_idx + 1}: also depends on {', '.join(sorted(set(extra)))} "
+                    "from other cells; only one upstream input is connected (single df_in port)."
+                )
+        elif not info.parse_ok and last_node_id is not None:
+            upstream_node = last_node_id  # fall back to sequential order
+
+        picked, picked_params = _pick_builtin_spec(code, specs_by_id)
+        if picked is not None:
+            params = _json_safe_params({**picked.default_params, **picked_params})
+            node = WorkflowNode(
+                id=node_id,
+                type=picked.id,
+                label=picked.label,
+                category=picked.category,
+                position=Position(x=120 + node_idx * 180, y=160),
+                params=params,
+                code=picked.default_code,
+            )
+            upstream_node = None  # source nodes take no df_in
+        else:
+            out_name = info.assigned_names[-1] if info.assigned_names else None
+            wrapped = _wrap_cell_code(code, in_name if upstream_node else None, out_name, info)
+            summary = code.splitlines()[0][:80]
+            temp_spec = _temp_spec_from_code(wrapped, node_idx, summary)
             generated_specs.append(temp_spec)
             node = WorkflowNode(
                 id=node_id,
                 type=temp_spec.id,
                 label=temp_spec.label,
                 category=temp_spec.category,
-                position=Position(x=120 + idx * 180, y=160),
+                position=Position(x=120 + node_idx * 180, y=160),
                 params=_json_safe_params(dict(temp_spec.default_params)),
                 code=temp_spec.default_code,
             )
-        else:
-            params = _json_safe_params(dict(picked.default_params))
-            if picked.id == "read_csv":
-                m = re.search(r"read_csv\(([^)]*)\)", code)
-                if m:
-                    args = m.group(1)
-                    path_match = re.search(r"""['"]([^'"]+\.(csv|txt))['"]""", args, re.IGNORECASE)
-                    if path_match:
-                        params["file_path"] = path_match.group(1)
-            node = WorkflowNode(
-                id=node_id,
-                type=picked.id,
-                label=picked.label,
-                category=picked.category,
-                position=Position(x=120 + idx * 180, y=160),
-                params=params,
-                code=picked.default_code,
-            )
+
         workflow_nodes.append(node)
-        if idx > 0:
-            prev = workflow_nodes[idx - 1]
+        if upstream_node:
             workflow_edges.append(
                 WorkflowEdge(
-                    id=_edge_id(prev.id, node.id, idx),
-                    source=prev.id,
+                    id=_edge_id(upstream_node, node.id, node_idx),
+                    source=upstream_node,
                     target=node.id,
                     sourceHandle="df_out",
                     targetHandle="df_in",
                 )
             )
+
+        # This cell now produces every name it assigned.
+        for name in info.assigned_names:
+            producers[name] = node.id
+        last_node_id = node.id
+        node_idx += 1
 
     if not workflow_nodes:
         warnings.append("No executable code cells found in notebook input.")

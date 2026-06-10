@@ -12,7 +12,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from app.data_store import DataStore
+from app.data_store import DataStore, ResultCache
 from app.default_nodes import DEFAULT_NODE_SPECS
 from app.models import (
     ComposeWorkflowRequest,
@@ -23,12 +23,12 @@ from app.models import (
     NotebookCell,
     NotebookStandardizeRequest,
     NotebookStandardizeResponse,
+    RunWorkflowRequest,
     RunWorkflowResponse,
     SingleNodeRunRequest,
     UploadResponse,
     WorkflowPlanRequest,
     WorkflowPlanResponse,
-    WorkflowPayload,
 )
 from app.registry import add_gis_specs, add_temporary_specs, list_all_dynamic_specs
 from app.services.gis_ingest import ingest_articles_to_specs
@@ -60,6 +60,7 @@ app.add_middleware(
 )
 
 _store = DataStore()
+_result_cache = ResultCache()
 
 
 def _notebook_standardize_json_response(
@@ -148,12 +149,14 @@ async def upload(file: UploadFile = File(...)) -> UploadResponse:
 
 
 @app.post("/api/workflow/run", response_model=RunWorkflowResponse)
-def run_workflow_endpoint(payload: WorkflowPayload) -> RunWorkflowResponse:
+def run_workflow_endpoint(payload: RunWorkflowRequest) -> RunWorkflowResponse:
     status, node_outputs, logs, err_id, msg = run_workflow(
         payload.nodes,
         payload.edges,
         _store,
         TMP_ARTIFACTS,
+        cache=_result_cache,
+        use_cache=payload.use_cache,
     )
     if status == "error":
         return RunWorkflowResponse(
@@ -174,6 +177,8 @@ def run_node_endpoint(payload: SingleNodeRunRequest) -> RunWorkflowResponse:
         payload.node_id,
         _store,
         TMP_ARTIFACTS,
+        cache=_result_cache,
+        use_cache=payload.use_cache,
     )
     if status == "error":
         return RunWorkflowResponse(
@@ -207,8 +212,16 @@ async def standardize_notebook_upload(notebook: UploadFile = File(...)) -> Respo
 
 @app.post("/api/workflow/plan", response_model=WorkflowPlanResponse)
 def plan_workflow_endpoint(payload: WorkflowPlanRequest) -> WorkflowPlanResponse:
-    planned = plan_workflow(payload)
+    specs = [*DEFAULT_NODE_SPECS, *list_all_dynamic_specs()]
+    planned = plan_workflow(payload, specs)
     return WorkflowPlanResponse(steps=planned.steps, raw_model_text=planned.raw_text, warnings=planned.warnings)
+
+
+@app.post("/api/cache/clear")
+def clear_result_cache() -> dict[str, str]:
+    """Drop all cached node results (force full re-execution on next run)."""
+    _result_cache.clear()
+    return {"status": "cleared"}
 
 
 @app.post("/api/workflow/compose", response_model=ComposeWorkflowResponse)

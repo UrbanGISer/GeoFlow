@@ -1,8 +1,10 @@
-"""Topological workflow execution."""
+"""Topological workflow execution with incremental (fingerprint-cached) re-runs."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -10,7 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.data_store import DataStore, write_html_artifact
+from app.data_store import DataStore, ResultCache, write_html_artifact
 from app.executors import execute_node_code
 from app.models import WorkflowEdge, WorkflowNode
 from app.node_specs import get_spec_by_type
@@ -159,18 +161,63 @@ def _preview_records(df: pd.DataFrame, limit: int = 20) -> list[dict[str, Any]]:
     return rows
 
 
+def _file_stat_tokens(params: dict[str, Any]) -> list[str]:
+    """File-typed params contribute mtime+size so editing an input file invalidates the cache."""
+    tokens: list[str] = []
+    for key, value in sorted(params.items()):
+        if not isinstance(value, str) or not value:
+            continue
+        lowered = key.lower()
+        if "path" not in lowered and "file" not in lowered:
+            continue
+        try:
+            st = Path(value).stat()
+            tokens.append(f"{key}={st.st_mtime_ns}:{st.st_size}")
+        except OSError:
+            tokens.append(f"{key}=missing")
+    return tokens
+
+
+def node_fingerprint(node: WorkflowNode, upstream_fingerprint: str | None) -> str:
+    """Content hash of everything that determines this node's output."""
+    try:
+        params_token = json.dumps(node.params, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        params_token = str(sorted(node.params.items(), key=lambda kv: kv[0]))
+    material = "\x1f".join(
+        [
+            node.type,
+            node.code,
+            params_token,
+            upstream_fingerprint or "",
+            *_file_stat_tokens(node.params),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def run_workflow(
     nodes: list[WorkflowNode],
     edges: list[WorkflowEdge],
     store: DataStore,
     artifacts_dir: Path,
+    cache: ResultCache | None = None,
+    use_cache: bool = True,
 ) -> tuple[str, dict[str, Any], list[str], str | None, str | None]:
     """
     Execute full workflow. Returns (status, node_outputs, logs, error_node_id, error_message).
+
+    When a cache is provided, nodes whose fingerprint (code + params + input
+    files + upstream chain) is unchanged reuse the previous result instead of
+    re-executing — KNIME-style incremental runs.
     """
     store.clear()
     node_outputs: dict[str, Any] = {}
     logs: list[str] = []
+    fingerprints: dict[str, str] = {}
+    run_started = time.perf_counter()
+    cached_count = 0
+    executed_count = 0
 
     try:
         order = topological_sort(nodes, edges)
@@ -188,21 +235,37 @@ def run_workflow(
         df_in: pd.DataFrame | None = None
         if upstream_id:
             df_in = store.get_df_for_node(upstream_id)
+            if df_in is not None:
+                # Shallow copy (cheap under copy-on-write) shields cached
+                # upstream results from in-place mutation by node code.
+                df_in = df_in.copy(deep=False)
 
         params = dict(node.params)
+        fingerprint = node_fingerprint(node, fingerprints.get(upstream_id or ""))
+        fingerprints[nid] = fingerprint
 
-        try:
-            df_out, html_out = execute_node_code(node.code, df_in, params)
-        except Exception as exc:  # noqa: BLE001 - intentional (user-supplied code)
-            return (
-                "error",
-                node_outputs,
-                logs,
-                nid,
-                f"[{label}] {exc.__class__.__name__}: {exc}",
-            )
+        from_cache = False
+        started = time.perf_counter()
+        cached_entry = cache.get(fingerprint) if (cache is not None and use_cache) else None
+        if cached_entry is not None:
+            df_out, html_out = cached_entry
+            from_cache = True
+            cached_count += 1
+        else:
+            try:
+                df_out, html_out = execute_node_code(node.code, df_in, params)
+            except Exception as exc:  # noqa: BLE001 - intentional (user-supplied code)
+                return (
+                    "error",
+                    node_outputs,
+                    logs,
+                    nid,
+                    f"[{label}] {exc.__class__.__name__}: {exc}",
+                )
+            executed_count += 1
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
 
-        out_entry: dict[str, Any] = {}
+        out_entry: dict[str, Any] = {"cached": from_cache, "elapsed_ms": elapsed_ms}
 
         if df_out is not None:
             if not isinstance(df_out, pd.DataFrame):
@@ -237,11 +300,21 @@ def run_workflow(
                 "artifact_url": f"/api/artifacts/{fname}",
             }
 
-        if out_entry:
+        if cache is not None and not from_cache:
+            cache.put(fingerprint, df_out if isinstance(df_out, pd.DataFrame) else None, html_out)
+
+        if "df_out" in out_entry or "html_out" in out_entry:
             node_outputs[nid] = out_entry
 
-        logs.append(f"[{label}] success")
+        if from_cache:
+            logs.append(f"[{label}] cached (reused previous result)")
+        else:
+            logs.append(f"[{label}] success in {elapsed_ms} ms")
 
+    total_ms = round((time.perf_counter() - run_started) * 1000.0, 1)
+    logs.append(
+        f"Workflow finished in {total_ms} ms ({executed_count} executed, {cached_count} from cache)."
+    )
     return "success", node_outputs, logs, None, None
 
 
@@ -251,9 +324,11 @@ def run_single_node(
     node_id: str,
     store: DataStore,
     artifacts_dir: Path,
+    cache: ResultCache | None = None,
+    use_cache: bool = True,
 ) -> tuple[str, dict[str, Any], list[str], str | None, str | None]:
     """Run upstream subgraph then the selected node (same engine as full workflow on subgraph)."""
     sub_nodes, sub_edges = subgraph_nodes_for_target(nodes, edges, node_id)
     if not any(n.id == node_id for n in sub_nodes):
         return "error", {}, [], node_id, f"Node not found: {node_id}"
-    return run_workflow(sub_nodes, sub_edges, store, artifacts_dir)
+    return run_workflow(sub_nodes, sub_edges, store, artifacts_dir, cache=cache, use_cache=use_cache)

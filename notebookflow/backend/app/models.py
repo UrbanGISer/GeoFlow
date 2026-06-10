@@ -35,6 +35,10 @@ class WorkflowPayload(BaseModel):
     edges: list[WorkflowEdge]
 
 
+class RunWorkflowRequest(WorkflowPayload):
+    use_cache: bool = True
+
+
 class RunWorkflowResponse(BaseModel):
     status: str
     node_outputs: dict[str, Any] = Field(default_factory=dict)
@@ -47,6 +51,7 @@ class SingleNodeRunRequest(BaseModel):
     nodes: list[WorkflowNode]
     edges: list[WorkflowEdge]
     node_id: str
+    use_cache: bool = True
 
 
 class HealthResponse(BaseModel):
@@ -116,6 +121,10 @@ class PlanStep(BaseModel):
     title: str
     intent: str
     io_type: str = "df_to_df"
+    # Concrete grounding produced by a catalog-aware planner:
+    node_id: str | None = None  # existing library node id, if one fits
+    params: dict[str, Any] = Field(default_factory=dict)  # concrete parameter values
+    code: str | None = None  # generated node code when no library node fits
 
 
 class WorkflowPlanResponse(BaseModel):

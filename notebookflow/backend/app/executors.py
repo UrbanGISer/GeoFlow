@@ -2,9 +2,34 @@
 
 from __future__ import annotations
 
+import hashlib
+from types import CodeType
 from typing import Any
 
 import pandas as pd
+
+# Copy-on-write makes shallow DataFrame copies cheap and prevents node code
+# from mutating cached upstream results in place (pandas 3.x default behavior).
+try:
+    pd.set_option("mode.copy_on_write", True)
+except Exception:  # noqa: BLE001 - older pandas without the option
+    pass
+
+# Node code is recompiled only when its source changes.
+_CODE_CACHE: dict[str, CodeType] = {}
+_CODE_CACHE_MAX = 256
+
+
+def _compiled(code: str) -> CodeType:
+    key = hashlib.sha1(code.encode("utf-8")).hexdigest()
+    cached = _CODE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    compiled = compile(code, "<node>", "exec")
+    if len(_CODE_CACHE) >= _CODE_CACHE_MAX:
+        _CODE_CACHE.clear()
+    _CODE_CACHE[key] = compiled
+    return compiled
 
 
 def execute_node_code(
@@ -27,5 +52,5 @@ def execute_node_code(
         "__builtins__": __builtins__,
         "pd": pd,
     }
-    exec(code, glob_ns, local_ns)
+    exec(_compiled(code), glob_ns, local_ns)
     return local_ns.get("df_out"), local_ns.get("html_out")

@@ -2,6 +2,27 @@
 
 NotebookFlow is a local-first visual workflow canvas where each node is a notebook-like Python code cell.
 
+## v0.3 highlights
+
+- **Incremental execution (KNIME-style)**: node results are cached by content
+  fingerprint (code + params + input-file mtime + upstream chain). Re-running a
+  workflow only executes nodes whose inputs changed; everything else is served
+  from cache. Logs show `cached` / `success in N ms` per node and a run summary.
+  Send `"use_cache": false` in the run payload or call `POST /api/cache/clear`
+  to force re-execution.
+- **Catalog-aware AI planner**: the LLM now sees the full node library (ids, IO
+  contracts, parameters) and returns concrete steps — an existing `node_id`
+  with filled-in `params`, or generated node code (safety-scanned) when nothing
+  fits. Fenced/chatty JSON replies are parsed robustly instead of silently
+  falling back to heuristics.
+- **AST-based notebook import**: edges follow real variable dataflow (branches
+  preserved), notebook variable names are bridged to the `df_in`/`df_out`
+  convention so imported workflows run as-is, import-only cells are merged, and
+  IPython magics are stripped.
+
+See [docs/next-gen-architecture.md](../docs/next-gen-architecture.md) for the
+diagnosis behind these changes and the longer-term roadmap.
+
 ## v0.2 AI workflow MVP scope
 
 - Tabular + geospatial workflows (pandas / geopandas)
@@ -66,9 +87,10 @@ Set environment variables before backend start:
 AI_API_BASE_URL=<your-compatible-base-url>
 AI_API_KEY=<your-api-key>
 AI_MODEL=<model-name>
+AI_TIMEOUT_SECONDS=60   # optional, request timeout for the planner call
 ```
 
-If not configured (or provider fails), NotebookFlow automatically falls back to deterministic rule-based planning.
+If not configured (or provider fails), NotebookFlow automatically falls back to deterministic rule-based planning. Planner warnings in the response tell you which path was used.
 
 ## Frontend setup
 
@@ -112,7 +134,19 @@ Then restart `npm run dev` or `npm run preview`. See `frontend/.env.example`.
 | POST | `/api/workflow/plan` | Generate planning steps from prompt |
 | POST | `/api/workflow/compose` | Compose executable workflow (library-first + temporary fallback) |
 | POST | `/api/library/gis/import` | Ingest structured GIS article records to node candidates |
+| POST | `/api/cache/clear` | Drop cached node results (force full re-execution) |
 | GET | `/api/artifacts/{filename}` | Serve generated HTML artifacts |
+
+## Backend tests
+
+```bash
+cd notebookflow/backend
+python tests/test_smoke.py
+```
+
+Covers: fingerprint cache hits/invalidation, cache mutation safety, planner
+JSON extraction, retriever scoring, temp-node code safety scan, and end-to-end
+execution of standardized notebooks.
 
 ## AI workflow features
 

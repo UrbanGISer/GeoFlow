@@ -1,7 +1,8 @@
-"""In-memory DataFrame store and artifact paths for workflow runs."""
+"""In-memory DataFrame store, node result cache, and artifact paths."""
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,44 @@ class DataStore:
 
     def get_df_from_upstream(self, upstream_id: str) -> pd.DataFrame | None:
         return self.get_df_for_node(upstream_id)
+
+
+class ResultCache:
+    """LRU cache of node outputs keyed by content fingerprint.
+
+    A fingerprint covers node code, params, source-file stats, and the
+    upstream fingerprint chain, so a hit means "nothing that feeds this
+    node has changed" and the stored result can be reused without executing.
+    """
+
+    def __init__(self, max_entries: int = 32, max_df_bytes: int = 256 * 1024 * 1024) -> None:
+        self._entries: OrderedDict[str, tuple[pd.DataFrame | None, str | None]] = OrderedDict()
+        self._max_entries = max_entries
+        self._max_df_bytes = max_df_bytes
+
+    def get(self, fingerprint: str) -> tuple[pd.DataFrame | None, str | None] | None:
+        entry = self._entries.get(fingerprint)
+        if entry is not None:
+            self._entries.move_to_end(fingerprint)
+        return entry
+
+    def put(self, fingerprint: str, df: pd.DataFrame | None, html: str | None) -> None:
+        if df is not None:
+            try:
+                if int(df.memory_usage(deep=False).sum()) > self._max_df_bytes:
+                    return  # too large to keep around
+            except Exception:  # noqa: BLE001
+                pass
+        self._entries[fingerprint] = (df, html)
+        self._entries.move_to_end(fingerprint)
+        while len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def __len__(self) -> int:
+        return len(self._entries)
 
 
 def artifact_html_path(artifacts_dir: Path, node_id: str) -> Path:

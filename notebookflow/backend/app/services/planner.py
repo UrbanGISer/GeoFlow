@@ -1,13 +1,29 @@
-"""LLM planner with OpenAI-compatible API and deterministic fallback."""
+"""LLM planner with OpenAI-compatible API and deterministic fallback.
+
+The planner is *catalog-aware*: the model sees the actual node library
+(ids, IO contracts, parameters) and returns concrete steps that either
+reference an existing node id with filled-in params, or carry generated
+node code following the df_in/params/df_out convention.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from urllib import request
 
-from app.models import PlanStep, WorkflowPlanRequest
+from app.models import NodeSpec, PlanStep, WorkflowPlanRequest
+
+NODE_CODE_CONVENTION = (
+    "Node code convention: each node is a Python cell that receives "
+    "`df_in` (pandas/geopandas DataFrame from the upstream node, or None for source nodes) "
+    "and `params` (dict). It must assign `df_out` (DataFrame) for data nodes, or "
+    "`html_out` (HTML string, e.g. plotly `fig.to_html(include_plotlyjs='cdn')` or a folium "
+    "map `m.get_root().render()`) for visualization nodes. "
+    "Available libraries: pandas (pd), geopandas, plotly, folium."
+)
 
 
 @dataclass
@@ -40,29 +56,57 @@ def _heuristic_steps(prompt: str, max_steps: int) -> list[PlanStep]:
     return steps[: max(1, max_steps)]
 
 
-def _call_openai_compatible(req: WorkflowPlanRequest) -> tuple[list[PlanStep], str]:
+def extract_json_object(text: str) -> dict | None:
+    """Parse a JSON object out of an LLM reply that may be fenced or chatty."""
+    text = text.strip()
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        obj = json.loads(text)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            obj = json.loads(text[start : end + 1])
+            return obj if isinstance(obj, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def catalog_summary(specs: list[NodeSpec]) -> str:
+    """Compact, LLM-readable description of the node library."""
+    lines: list[str] = []
+    for s in specs:
+        param_bits = []
+        for p in s.parameters:
+            bit = f"{p.name}:{p.type}"
+            if p.required:
+                bit += "*"
+            if p.options:
+                bit += f"[{'|'.join(str(o) for o in p.options)}]"
+            param_bits.append(bit)
+        inputs = ",".join(s.inputs.keys()) or "none"
+        outputs = ",".join(s.outputs.keys()) or "none"
+        lines.append(
+            f"- id={s.id} | {s.label} ({s.category}) | in:{inputs} out:{outputs} | params: {', '.join(param_bits) or 'none'}"
+        )
+    return "\n".join(lines)
+
+
+def _chat_completion(messages: list[dict], temperature: float = 0.2) -> str:
     base_url = os.getenv("AI_API_BASE_URL", "").strip()
     api_key = os.getenv("AI_API_KEY", "").strip()
     model = os.getenv("AI_MODEL", "").strip()
     if not base_url or not api_key or not model:
         raise RuntimeError("AI_API_BASE_URL / AI_API_KEY / AI_MODEL not configured.")
+    timeout = float(os.getenv("AI_TIMEOUT_SECONDS", "60"))
     url = f"{base_url.rstrip('/')}/chat/completions"
-    prompt = (
-        "You are a workflow planner. Return strict JSON with key 'steps'. "
-        "Each step item includes: title, intent, io_type (source_to_df|df_to_df|df_to_html). "
-        f"Max steps: {max(1, req.max_steps)}.\n\n"
-        f"User prompt: {req.prompt}\n"
-        f"Data context: {req.data_context}\n"
-        f"Constraints: {req.constraints}"
-    )
-    body = {
-        "model": model,
-        "temperature": 0.2,
-        "messages": [
-            {"role": "system", "content": "Return only valid JSON."},
-            {"role": "user", "content": prompt},
-        ],
-    }
+    body = {"model": model, "temperature": temperature, "messages": messages}
     payload = json.dumps(body).encode("utf-8")
     http_req = request.Request(
         url=url,
@@ -73,25 +117,86 @@ def _call_openai_compatible(req: WorkflowPlanRequest) -> tuple[list[PlanStep], s
             "Content-Type": "application/json",
         },
     )
-    with request.urlopen(http_req, timeout=30) as resp:
+    with request.urlopen(http_req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8")
     obj = json.loads(raw)
-    content = obj["choices"][0]["message"]["content"]
-    parsed = json.loads(content)
-    steps = [PlanStep(**s) for s in parsed.get("steps", [])]
-    return steps, content
+    return obj["choices"][0]["message"]["content"]
 
 
-def plan_workflow(req: WorkflowPlanRequest) -> PlannerResult:
+def llm_available() -> bool:
+    return bool(
+        os.getenv("AI_API_BASE_URL", "").strip()
+        and os.getenv("AI_API_KEY", "").strip()
+        and os.getenv("AI_MODEL", "").strip()
+    )
+
+
+def _build_plan_prompt(req: WorkflowPlanRequest, specs: list[NodeSpec] | None) -> str:
+    parts = [
+        "Plan a data-analysis workflow as a linear chain of steps. "
+        "Return strict JSON: {\"steps\": [...]}. Each step has:\n"
+        "  title (short), intent (one sentence), io_type (source_to_df|df_to_df|df_to_html),\n"
+        "  node_id (an id from the node library below if one fits the step, else null),\n"
+        "  params (concrete parameter values for that node; use real column/file names from the data context when known),\n"
+        "  code (ONLY when node_id is null: Python following the node code convention; else null).",
+        NODE_CODE_CONVENTION,
+        f"Max steps: {max(1, req.max_steps)}.",
+    ]
+    if specs:
+        parts.append("Node library:\n" + catalog_summary(specs))
+    parts.append(f"User goal: {req.prompt}")
+    if req.data_context:
+        parts.append(f"Data context: {req.data_context}")
+    if req.constraints:
+        parts.append(f"Constraints: {req.constraints}")
+    return "\n\n".join(parts)
+
+
+def _parse_steps(parsed: dict, max_steps: int, warnings: list[str]) -> list[PlanStep]:
+    steps: list[PlanStep] = []
+    for i, item in enumerate(parsed.get("steps", [])):
+        if not isinstance(item, dict):
+            continue
+        try:
+            steps.append(
+                PlanStep(
+                    title=str(item.get("title") or f"Step {i + 1}"),
+                    intent=str(item.get("intent") or ""),
+                    io_type=str(item.get("io_type") or "df_to_df"),
+                    node_id=item.get("node_id") or None,
+                    params=item.get("params") if isinstance(item.get("params"), dict) else {},
+                    code=item.get("code") or None,
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            warnings.append(f"Skipped malformed plan step {i + 1}: {e}")
+    return steps[: max(1, max_steps)]
+
+
+def plan_workflow(req: WorkflowPlanRequest, specs: list[NodeSpec] | None = None) -> PlannerResult:
     warnings: list[str] = []
     try:
-        steps, raw = _call_openai_compatible(req)
+        content = _chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are the workflow planner of a visual GIS/data-analysis tool. "
+                        "Respond with a single JSON object and nothing else."
+                    ),
+                },
+                {"role": "user", "content": _build_plan_prompt(req, specs)},
+            ]
+        )
+        parsed = extract_json_object(content)
+        if parsed is None:
+            warnings.append("Model reply was not parseable JSON; fallback heuristics were used.")
+            return PlannerResult(steps=_heuristic_steps(req.prompt, req.max_steps), raw_text=content, warnings=warnings)
+        steps = _parse_steps(parsed, req.max_steps, warnings)
         if not steps:
             warnings.append("Model returned no steps; fallback heuristics were used.")
-            hs = _heuristic_steps(req.prompt, req.max_steps)
-            return PlannerResult(steps=hs, raw_text=raw, warnings=warnings)
-        return PlannerResult(steps=steps[: req.max_steps], raw_text=raw, warnings=warnings)
+            return PlannerResult(steps=_heuristic_steps(req.prompt, req.max_steps), raw_text=content, warnings=warnings)
+        return PlannerResult(steps=steps, raw_text=content, warnings=warnings)
     except Exception as exc:  # noqa: BLE001
         warnings.append(f"Planner fallback used: {exc}")
-        hs = _heuristic_steps(req.prompt, req.max_steps)
-        return PlannerResult(steps=hs, raw_text="", warnings=warnings)
+        return PlannerResult(steps=_heuristic_steps(req.prompt, req.max_steps), raw_text="", warnings=warnings)
