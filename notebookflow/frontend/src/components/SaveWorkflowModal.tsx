@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { workspaceSaveFile } from "../api/client";
 import { loadWorkspaceRoot } from "../types";
+import { FolderPickerModal } from "./FolderPickerModal";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspacePanel";
 
 interface SaveWorkflowModalProps {
@@ -16,6 +17,7 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
   const [name, setName] = useState("workflow.json");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -59,12 +61,22 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
         <div className="nf-modal-body">
           <div className="nf-field" style={{ marginBottom: 10 }}>
             <label className="nf-field-label">Folder</label>
-            <input
-              type="text"
-              value={folder}
-              placeholder="Default workspace folder"
-              onChange={(e) => setFolder(e.target.value)}
-            />
+            <div className="nf-field-with-btn">
+              <input
+                type="text"
+                value={folder}
+                placeholder="Default workspace folder"
+                onChange={(e) => setFolder(e.target.value)}
+              />
+              <button
+                type="button"
+                className="nf-btn nf-btn-sm"
+                disabled={busy}
+                onClick={() => setPickerOpen(true)}
+              >
+                Browse…
+              </button>
+            </div>
             <span className="nf-field-hint">
               Empty = default workspace. Pin a folder via the Workspace tab’s 📌 Set Root to change the default.
             </span>
@@ -93,6 +105,13 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
           ) : null}
         </div>
       </div>
+      <FolderPickerModal
+        open={pickerOpen}
+        initialPath={folder.trim() || loadWorkspaceRoot()}
+        title="Choose Save Folder"
+        onSelect={(path) => setFolder(path)}
+        onClose={() => setPickerOpen(false)}
+      />
     </div>
   );
 }

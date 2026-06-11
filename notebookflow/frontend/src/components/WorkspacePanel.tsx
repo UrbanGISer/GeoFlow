@@ -7,6 +7,7 @@ import {
   type WorkspaceListing,
 } from "../api/client";
 import { loadWorkspaceRoot, saveWorkspaceRoot } from "../types";
+import { FolderPickerModal } from "./FolderPickerModal";
 
 /** Other components (e.g. the Save dialog) dispatch this to refresh the listing. */
 export const WORKSPACE_REFRESH_EVENT = "geoflow-workspace-refresh";
@@ -42,6 +43,7 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   const [busy, setBusy] = useState(false);
   const [pathInput, setPathInput] = useState("");
   const [root, setRoot] = useState<string | null>(() => loadWorkspaceRoot());
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const load = useCallback(async (path?: string | null) => {
     setBusy(true);
@@ -143,6 +145,11 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
           onClick={handleNewFile}>
           + File
         </button>
+        <button type="button" className="nf-btn nf-btn-sm" disabled={busy}
+          title="Browse for a folder to open here"
+          onClick={() => setPickerOpen(true)}>
+          Browse…
+        </button>
         <button
           type="button"
           className={`nf-btn nf-btn-sm${isRoot ? " nf-btn-pinned" : ""}`}
@@ -196,6 +203,13 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
           </div>
         ))}
       </div>
+      <FolderPickerModal
+        open={pickerOpen}
+        initialPath={listing?.path ?? root}
+        title="Browse Folder"
+        onSelect={(path) => void load(path)}
+        onClose={() => setPickerOpen(false)}
+      />
     </div>
   );
 }
