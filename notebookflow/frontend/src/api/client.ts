@@ -1,7 +1,9 @@
 import type {
+  AIConfig,
   ComposeWorkflowResponse,
   GISArticleInput,
   GISImportResponse,
+  NodeGenerateResponse,
   NodeSpec,
   NotebookCellInput,
   NotebookStandardizeResponse,
@@ -159,6 +161,7 @@ export async function planWorkflow(payload: {
   data_context?: string;
   constraints?: string;
   max_steps?: number;
+  ai_config?: AIConfig | null;
 }): Promise<WorkflowPlanResponse> {
   const res = await fetch(`${API_PREFIX}/workflow/plan`, {
     method: "POST",
@@ -176,6 +179,7 @@ export async function composeWorkflow(payload: {
   max_steps?: number;
   allow_temporary_nodes?: boolean;
   confidence_threshold?: number;
+  ai_config?: AIConfig | null;
 }): Promise<ComposeWorkflowResponse> {
   const res = await fetch(`${API_PREFIX}/workflow/compose`, {
     method: "POST",
@@ -184,6 +188,19 @@ export async function composeWorkflow(payload: {
   });
   if (!res.ok) throw new Error(`Workflow compose failed: ${res.status}`);
   return parseJson(res);
+}
+
+export async function generateNode(payload: {
+  description: string;
+  category?: string;
+  ai_config?: AIConfig | null;
+}): Promise<NodeGenerateResponse> {
+  const res = await fetch(`${API_PREFIX}/node/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJsonWithHttpError<NodeGenerateResponse>(res, "Node generate");
 }
 
 export async function importGISLibrary(payload: { articles: GISArticleInput[] }): Promise<GISImportResponse> {

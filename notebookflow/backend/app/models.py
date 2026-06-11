@@ -84,6 +84,7 @@ class NodeSpec(BaseModel):
     default_code: str
     temporary: bool = False
     provenance: dict[str, Any] | None = None
+    cwl_hints: dict[str, Any] | None = None  # reserved for CWL export
 
 
 class NotebookCell(BaseModel):
@@ -115,6 +116,7 @@ class WorkflowPlanRequest(BaseModel):
     data_context: str = ""
     constraints: str = ""
     max_steps: int = 8
+    ai_config: AIConfig | None = None
 
 
 class PlanStep(BaseModel):
@@ -140,6 +142,7 @@ class ComposeWorkflowRequest(BaseModel):
     max_steps: int = 8
     allow_temporary_nodes: bool = True
     confidence_threshold: float = 0.45
+    ai_config: AIConfig | None = None
 
 
 class NodeSuggestion(BaseModel):
@@ -156,6 +159,28 @@ class ComposeWorkflowResponse(BaseModel):
     suggestions: list[NodeSuggestion] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     validation: WorkflowValidation
+
+
+class AIConfig(BaseModel):
+    """Runtime AI provider override — sent from the AI Studio settings page."""
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    api_key: str = ""
+    model: str = "gemini-2.5-flash"
+
+
+class NodeGenerateRequest(BaseModel):
+    description: str
+    category: str = "Python Script"
+    ai_config: AIConfig | None = None
+
+
+class NodeGenerateResponse(BaseModel):
+    node_spec: NodeSpec
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CWLExportRequest(WorkflowPayload):
+    pass
 
 
 class GISArticleInput(BaseModel):

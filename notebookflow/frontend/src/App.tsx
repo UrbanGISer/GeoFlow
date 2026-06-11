@@ -11,14 +11,13 @@ import {
   applyNodeChanges,
 } from "@xyflow/react";
 import { fetchNodeSpecs, runSingleNode, runWorkflow } from "./api/client";
-import { NodeLibrary } from "./components/NodeLibrary";
+import { AIStudioPage } from "./components/AIStudioPage";
+import { LeftPanel } from "./components/LeftPanel";
 import { NodeCreatorModal } from "./components/NodeCreatorModal";
 import { NodeNotebookModal } from "./components/NodeNotebookModal";
 import { OutputPreview } from "./components/OutputPreview";
-import { NotebookImportModal } from "./components/NotebookImportModal";
 import { PlanReviewPanel } from "./components/PlanReviewPanel";
 import { SelectedNodePanel } from "./components/SelectedNodePanel";
-import { WorkflowPromptPanel } from "./components/WorkflowPromptPanel";
 import { WorkflowCanvas } from "./components/WorkflowCanvas";
 import type {
   ComposeWorkflowResponse,
@@ -70,11 +69,7 @@ function buildPayload(nodes: Node<FlowNodeData>[], edges: Edge[]): {
 }
 
 interface SavedWorkflow {
-  nodes: Array<
-    WorkflowNodePayload & {
-      position: { x: number; y: number };
-    }
-  >;
+  nodes: Array<WorkflowNodePayload & { position: { x: number; y: number } }>;
   edges: WorkflowEdgePayload[];
 }
 
@@ -88,16 +83,16 @@ export default function App() {
   const [modalNodeId, setModalNodeId] = useState<string | null>(null);
   const [nodeOutputs, setNodeOutputs] = useState<NodeOutputsMap>({});
   const [lastRunLogs, setLastRunLogs] = useState<string[]>([]);
-  const [workflowError, setWorkflowError] = useState<{ nodeId: string | null; message: string } | null>(
-    null,
-  );
+  const [workflowError, setWorkflowError] = useState<{ nodeId: string | null; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [draftParams, setDraftParams] = useState<Record<string, unknown> | null>(null);
   const [draftCode, setDraftCode] = useState("");
   const [runBusy, setRunBusy] = useState(false);
   const [nodeCreatorOpen, setNodeCreatorOpen] = useState(false);
-  const [notebookImportOpen, setNotebookImportOpen] = useState(false);
   const [composeResult, setComposeResult] = useState<ComposeWorkflowResponse | null>(null);
+  const [aiStudioOpen, setAiStudioOpen] = useState(false);
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
 
   const specById = useMemo(() => {
     const m: Record<string, NodeSpec> = {};
@@ -109,41 +104,26 @@ export default function App() {
     fetchNodeSpecs()
       .then((baseSpecs) => {
         const raw = localStorage.getItem(CUSTOM_NODES_STORAGE_KEY);
-        if (!raw) {
-          setSpecs(baseSpecs);
-          return;
-        }
+        if (!raw) { setSpecs(baseSpecs); return; }
         try {
           const custom = JSON.parse(raw) as NodeSpec[];
           const merged = [...baseSpecs];
           const seen = new Set(baseSpecs.map((s) => s.id));
-          for (const c of custom) {
-            if (!seen.has(c.id)) {
-              merged.push(c);
-            }
-          }
+          for (const c of custom) { if (!seen.has(c.id)) merged.push(c); }
           setSpecs(merged);
-        } catch {
-          setSpecs(baseSpecs);
-        }
+        } catch { setSpecs(baseSpecs); }
       })
       .catch((e) => console.error(e));
   }, []);
 
   const handleCreateNodeSpec = useCallback((spec: NodeSpec) => {
     const id = spec.id.trim();
-    if (!id) {
-      alert("Node id is required.");
-      return;
-    }
+    if (!id) { alert("Node id is required."); return; }
     setSpecs((prev) => {
-      if (prev.some((s) => s.id === id)) {
-        alert(`Node id already exists: ${id}`);
-        return prev;
-      }
+      if (prev.some((s) => s.id === id)) { alert(`Node id already exists: ${id}`); return prev; }
       const next = [...prev, { ...spec, id, name: id }];
-      const builtins = new Set(["read_csv", "column_filter", "row_filter", "groupby", "histogram", "geofile_reader", "geomap"]);
-      const customOnly = next.filter((s) => !builtins.has(s.id) && !s.temporary);
+      const builtinIds = new Set(next.filter((s) => !s.temporary).map((s) => s.id));
+      const customOnly = next.filter((s) => !s.temporary && !builtinIds.has(s.id));
       localStorage.setItem(CUSTOM_NODES_STORAGE_KEY, JSON.stringify(customOnly));
       return next;
     });
@@ -153,31 +133,18 @@ export default function App() {
     if (!incoming.length) return;
     setSpecs((prev) => {
       const byId = new Map(prev.map((s) => [s.id, s]));
-      incoming.forEach((s) => {
-        if (!byId.has(s.id)) byId.set(s.id, s);
-      });
-      const next = [...byId.values()];
-      const builtins = new Set(["read_csv", "column_filter", "row_filter", "groupby", "histogram", "geofile_reader", "geomap"]);
-      const customOnly = next.filter((s) => !builtins.has(s.id) && !s.temporary);
-      localStorage.setItem(CUSTOM_NODES_STORAGE_KEY, JSON.stringify(customOnly));
-      return next;
+      incoming.forEach((s) => { if (!byId.has(s.id)) byId.set(s.id, s); });
+      return [...byId.values()];
     });
   }, []);
 
   useEffect(() => {
-    if (!selectedId) {
-      setDraftParams(null);
-      setDraftCode("");
-      return;
-    }
+    if (!selectedId) { setDraftParams(null); setDraftCode(""); return; }
     const n = nodes.find((x) => x.id === selectedId);
-    if (!n) {
-      setDraftParams(null);
-      setDraftCode("");
-      return;
-    }
+    if (!n) { setDraftParams(null); setDraftCode(""); return; }
     setDraftParams(structuredClone(n.data.params));
     setDraftCode(n.data.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const onNodesChange = useCallback((changes: NodeChange<Node<FlowNodeData>>[]) => {
@@ -190,15 +157,12 @@ export default function App() {
 
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) =>
-      addEdge(
-        {
-          ...params,
-          id: `edge_${params.source}_${params.target}_${Date.now()}`,
-          sourceHandle: params.sourceHandle ?? "df_out",
-          targetHandle: params.targetHandle ?? "df_in",
-        },
-        eds,
-      ),
+      addEdge({
+        ...params,
+        id: `edge_${params.source}_${params.target}_${Date.now()}`,
+        sourceHandle: params.sourceHandle ?? "df_out",
+        targetHandle: params.targetHandle ?? "df_in",
+      }, eds),
     );
   }, []);
 
@@ -209,45 +173,57 @@ export default function App() {
     setModalNodeId((mid) => (mid && ids.has(mid) ? null : mid));
     setNodeOutputs((prev) => {
       const next = { ...prev };
-      ids.forEach((id) => {
-        delete next[id];
-      });
+      ids.forEach((id) => { delete next[id]; });
       return next;
     });
   }, []);
 
-  const addNode = useCallback(
-    (spec: NodeSpec) => {
-      const id = newNodeId();
+  const buildNode = useCallback(
+    (spec: NodeSpec, position: { x: number; y: number }): Node<FlowNodeData> => {
       const extras = flowExtras(spec);
+      return {
+        id: newNodeId(),
+        type: "notebook",
+        position,
+        data: {
+          label: spec.label,
+          type: spec.id,
+          category: spec.category,
+          params: structuredClone(spec.default_params),
+          code: spec.default_code,
+          status: "idle",
+          color: spec.color,
+          ...extras,
+        },
+      };
+    },
+    [],
+  );
+
+  const handleAddNode = useCallback(
+    (spec: NodeSpec) => {
       setNodes((nds) => {
         const last = nds[nds.length - 1];
         const x = last ? last.position.x + 180 : 100;
         const y = last ? last.position.y : 140;
-        const next: Node<FlowNodeData> = {
-          id,
-          type: "notebook",
-          position: { x, y },
-          data: {
-            label: spec.label,
-            type: spec.id,
-            category: spec.category,
-            params: structuredClone(spec.default_params),
-            code: spec.default_code,
-            status: "idle",
-            color: spec.color,
-            ...extras,
-          },
-        };
-        return [...nds, next];
+        return [...nds, buildNode(spec, { x, y })];
       });
     },
-    [setNodes],
+    [buildNode],
+  );
+
+  const handleDropSpec = useCallback(
+    (specId: string, position: { x: number; y: number }) => {
+      const spec = specById[specId];
+      if (!spec) return;
+      setNodes((nds) => [...nds, buildNode(spec, position)]);
+    },
+    [specById, buildNode],
   );
 
   const handleRunWorkflow = async () => {
     setWorkflowError(null);
-    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "running" } })));
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "running" as const } })));
     try {
       const payload = buildPayload(nodes, edges);
       const res = await runWorkflow(payload);
@@ -261,104 +237,74 @@ export default function App() {
             ...n,
             data: {
               ...n.data,
-              status:
-                n.id === res.node_id ? "error" : outs[n.id] ? "success" : "idle",
+              status: n.id === res.node_id ? "error" : outs[n.id] ? "success" : "idle",
             },
           })),
         );
         return;
       }
       setNodeOutputs(res.node_outputs ?? {});
-      setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "success" } })));
+      setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "success" as const } })));
     } catch (e) {
       setWorkflowError({ nodeId: null, message: e instanceof Error ? e.message : String(e) });
-      setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "idle" } })));
+      setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "idle" as const } })));
     }
   };
 
   const handleClearCanvas = () => {
-    setNodes([]);
-    setEdges([]);
-    setSelectedId(null);
-    setModalNodeId(null);
-    setNodeOutputs({});
-    setLastRunLogs([]);
-    setWorkflowError(null);
+    setNodes([]); setEdges([]); setSelectedId(null);
+    setModalNodeId(null); setNodeOutputs({}); setLastRunLogs([]); setWorkflowError(null);
   };
 
   const handleSaveJson = () => {
     const wf: SavedWorkflow = {
       nodes: nodes.map((n) => ({
-        id: n.id,
-        type: n.data.type,
-        label: n.data.label,
-        category: n.data.category,
-        position: { x: n.position.x, y: n.position.y },
-        params: n.data.params,
-        code: n.data.code,
+        id: n.id, type: n.data.type, label: n.data.label, category: n.data.category,
+        position: { x: n.position.x, y: n.position.y }, params: n.data.params, code: n.data.code,
       })),
       edges: buildPayload(nodes, edges).edges,
     };
     const blob = new Blob([JSON.stringify(wf, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "notebookflow-workflow.json";
+    a.download = "geoflow-workflow.json";
     a.click();
     URL.revokeObjectURL(a.href);
   };
 
-  const restoreWorkflow = (wf: SavedWorkflow) => {
-    const nextNodes: Node<FlowNodeData>[] = wf.nodes.map((sn) => {
-      const spec = specs.find((s) => s.id === sn.type);
-      if (!spec) {
+  const restoreWorkflow = useCallback(
+    (wf: SavedWorkflow) => {
+      const nextNodes: Node<FlowNodeData>[] = wf.nodes.map((sn) => {
+        const spec = specs.find((s) => s.id === sn.type);
+        if (!spec) {
+          return {
+            id: sn.id, type: "notebook", position: sn.position,
+            data: {
+              label: sn.label, type: sn.type, category: sn.category ?? "Unknown",
+              params: sn.params ?? {}, code: sn.code ?? "", status: "idle" as const,
+              color: "#bdbdbd", showInput: true, outputHandle: "df_out" as const,
+            },
+          };
+        }
+        const extras = flowExtras(spec);
         return {
-          id: sn.id,
-          type: "notebook",
-          position: sn.position,
+          id: sn.id, type: "notebook", position: sn.position,
           data: {
-            label: sn.label,
-            type: sn.type,
-            category: sn.category ?? "Unknown",
-            params: sn.params ?? {},
-            code: sn.code ?? "",
-            status: "idle",
-            color: "#bdbdbd",
-            showInput: true,
-            outputHandle: "df_out",
+            label: sn.label, type: sn.type, category: sn.category ?? spec.category,
+            params: sn.params ?? {}, code: sn.code ?? "", status: "idle" as const,
+            color: spec.color, ...extras,
           },
         };
-      }
-      const extras = flowExtras(spec);
-      return {
-        id: sn.id,
-        type: "notebook",
-        position: sn.position,
-        data: {
-          label: sn.label,
-          type: sn.type,
-          category: sn.category ?? spec.category,
-          params: sn.params ?? {},
-          code: sn.code ?? "",
-          status: "idle",
-          color: spec.color,
-          ...extras,
-        },
-      };
-    });
-    const nextEdges: Edge[] = wf.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle ?? "df_out",
-      targetHandle: e.targetHandle ?? "df_in",
-    }));
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    setSelectedId(null);
-    setModalNodeId(null);
-    setNodeOutputs({});
-    setWorkflowError(null);
-  };
+      });
+      const nextEdges: Edge[] = wf.edges.map((e) => ({
+        id: e.id, source: e.source, target: e.target,
+        sourceHandle: e.sourceHandle ?? "df_out", targetHandle: e.targetHandle ?? "df_in",
+      }));
+      setNodes(nextNodes); setEdges(nextEdges);
+      setSelectedId(null); setModalNodeId(null); setNodeOutputs({}); setWorkflowError(null);
+    },
+    [specs],
+  );
 
   const applyWorkflowPayload = useCallback(
     (wf: { nodes: WorkflowNodePayload[]; edges: WorkflowEdgePayload[] }) => {
@@ -366,34 +312,21 @@ export default function App() {
         const spec = specs.find((s) => s.id === sn.type);
         const extras = spec ? flowExtras(spec) : { showInput: true, outputHandle: "df_out" as const };
         return {
-          id: sn.id || `node_${i + 1}`,
-          type: "notebook",
+          id: sn.id || `node_${i + 1}`, type: "notebook",
           position: sn.position ?? { x: 100 + i * 180, y: 140 },
           data: {
-            label: sn.label,
-            type: sn.type,
-            category: sn.category ?? spec?.category ?? "Unknown",
-            params: sn.params ?? {},
-            code: sn.code ?? spec?.default_code ?? "",
-            status: "idle",
-            color: spec?.color ?? "#8e24aa",
-            ...extras,
+            label: sn.label, type: sn.type, category: sn.category ?? spec?.category ?? "Unknown",
+            params: sn.params ?? {}, code: sn.code ?? spec?.default_code ?? "",
+            status: "idle" as const, color: spec?.color ?? "#8e24aa", ...extras,
           },
         };
       });
       const nextEdges: Edge[] = wf.edges.map((e, i) => ({
-        id: e.id || `edge_${i + 1}`,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle ?? "df_out",
-        targetHandle: e.targetHandle ?? "df_in",
+        id: e.id || `edge_${i + 1}`, source: e.source, target: e.target,
+        sourceHandle: e.sourceHandle ?? "df_out", targetHandle: e.targetHandle ?? "df_in",
       }));
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      setSelectedId(null);
-      setModalNodeId(null);
-      setNodeOutputs({});
-      setWorkflowError(null);
+      setNodes(nextNodes); setEdges(nextEdges);
+      setSelectedId(null); setModalNodeId(null); setNodeOutputs({}); setWorkflowError(null);
     },
     [specs],
   );
@@ -406,9 +339,7 @@ export default function App() {
       try {
         const wf = JSON.parse(String(reader.result)) as SavedWorkflow;
         restoreWorkflow(wf);
-      } catch (e) {
-        alert(e instanceof Error ? e.message : "Invalid workflow JSON");
-      }
+      } catch (e) { alert(e instanceof Error ? e.message : "Invalid workflow JSON"); }
     };
     reader.readAsText(file);
     ev.target.value = "";
@@ -423,10 +354,9 @@ export default function App() {
     workflowError?.nodeId && workflowError.nodeId === selectedId ? workflowError.message : null;
 
   const workflowPayloadFn = useCallback(() => buildPayload(nodes, edges), [nodes, edges]);
+
   const handleSelectNode = useCallback((nodeId: string) => {
-    startTransition(() => {
-      setSelectedId(nodeId);
-    });
+    startTransition(() => { setSelectedId(nodeId); });
   }, []);
 
   const handleApplyDraft = useCallback(() => {
@@ -434,14 +364,7 @@ export default function App() {
     setNodes((ns) =>
       ns.map((n) =>
         n.id === selectedId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                params: structuredClone(draftParams),
-                code: draftCode,
-              },
-            }
+          ? { ...n, data: { ...n.data, params: structuredClone(draftParams), code: draftCode } }
           : n,
       ),
     );
@@ -451,14 +374,7 @@ export default function App() {
     if (!selectedId || draftParams === null) return;
     const merged = nodes.map((n) =>
       n.id === selectedId
-        ? {
-            ...n,
-            data: {
-              ...n.data,
-              params: structuredClone(draftParams),
-              code: draftCode,
-            },
-          }
+        ? { ...n, data: { ...n.data, params: structuredClone(draftParams), code: draftCode } }
         : n,
     );
     setNodes(merged);
@@ -466,25 +382,15 @@ export default function App() {
     setWorkflowError(null);
     try {
       const payload = buildPayload(merged, edges);
-      const res = await runSingleNode({
-        nodes: payload.nodes,
-        edges: payload.edges,
-        node_id: selectedId,
-      });
+      const res = await runSingleNode({ nodes: payload.nodes, edges: payload.edges, node_id: selectedId });
       setLastRunLogs(res.logs ?? []);
       if (res.status === "error") {
-        setWorkflowError({
-          nodeId: res.node_id ?? selectedId,
-          message: res.message ?? "Error",
-        });
+        setWorkflowError({ nodeId: res.node_id ?? selectedId, message: res.message ?? "Error" });
         setNodeOutputs((prev) => ({ ...prev, ...(res.node_outputs ?? {}) }));
         setNodes((ns) =>
           ns.map((n) => ({
             ...n,
-            data: {
-              ...n.data,
-              status: n.id === res.node_id ? "error" : n.data.status,
-            },
+            data: { ...n.data, status: n.id === res.node_id ? "error" as const : n.data.status },
           })),
         );
       } else {
@@ -492,15 +398,12 @@ export default function App() {
         setNodeOutputs((prev) => ({ ...prev, ...(res.node_outputs ?? {}) }));
         setNodes((ns) =>
           ns.map((n) =>
-            n.id === selectedId ? { ...n, data: { ...n.data, status: "success" } } : n,
+            n.id === selectedId ? { ...n, data: { ...n.data, status: "success" as const } } : n,
           ),
         );
       }
     } catch (e) {
-      setWorkflowError({
-        nodeId: selectedId,
-        message: e instanceof Error ? e.message : String(e),
-      });
+      setWorkflowError({ nodeId: selectedId, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setRunBusy(false);
     }
@@ -510,27 +413,14 @@ export default function App() {
     if (!selectedId) return;
     setNodes((ns) => ns.filter((n) => n.id !== selectedId));
     setEdges((es) => es.filter((e) => e.source !== selectedId && e.target !== selectedId));
-    setNodeOutputs((prev) => {
-      const next = { ...prev };
-      delete next[selectedId];
-      return next;
-    });
-    setSelectedId(null);
-    setModalNodeId(null);
+    setNodeOutputs((prev) => { const next = { ...prev }; delete next[selectedId]; return next; });
+    setSelectedId(null); setModalNodeId(null);
   }, [selectedId]);
 
   const handleModalSave = (nodeId: string, data: FlowNodeData) => {
     setNodes((ns) =>
       ns.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...data,
-                status: n.data.status,
-              },
-            }
-          : n,
+        n.id === nodeId ? { ...n, data: { ...data, status: n.data.status } } : n,
       ),
     );
     if (selectedId === nodeId) {
@@ -539,32 +429,42 @@ export default function App() {
     }
   };
 
+  // Track uploaded file paths from ParameterEditor upload events
+  const handleRecentFile = useCallback((filePath: string) => {
+    setRecentFiles((prev) => [...new Set([filePath, ...prev])].slice(0, 20));
+  }, []);
+  void handleRecentFile; // available for future use
+
   return (
     <div className="nf-app">
       <header className="nf-toolbar">
-        <div className="nf-brand">NotebookFlow</div>
+        <div className="nf-brand">GeoFlow</div>
         <div className="nf-toolbar-actions">
           <button type="button" className="nf-btn nf-btn-primary" onClick={handleRunWorkflow}>
-            Run Workflow
+            Run
           </button>
           <button type="button" className="nf-btn" onClick={handleClearCanvas}>
-            Clear Canvas
+            Clear
           </button>
           <button type="button" className="nf-btn" onClick={handleSaveJson}>
-            Save Workflow JSON
+            Save
           </button>
           <button type="button" className="nf-btn" onClick={() => fileInputRef.current?.click()}>
-            Load Workflow JSON
+            Load
           </button>
           <button type="button" className="nf-btn" onClick={() => setNodeCreatorOpen(true)}>
-            Node Creator
+            Manual Node
           </button>
-          <button type="button" className="nf-btn" onClick={() => setNotebookImportOpen(true)}>
-            Notebook to Flow
+          <button
+            type="button"
+            className="nf-btn nf-btn-ai"
+            onClick={() => setAiStudioOpen(true)}
+          >
+            ✦ AI Studio
           </button>
           {selectedId ? (
             <button type="button" className="nf-btn nf-btn-danger" onClick={handleDeleteSelectedNode}>
-              Delete node
+              Delete
             </button>
           ) : null}
           <input
@@ -580,17 +480,14 @@ export default function App() {
       <Group orientation="vertical" id="nf-layout-vertical" className="nf-workspace">
         <Panel id="nf-main-area" defaultSize="72%" minSize="35%">
           <Group orientation="horizontal" id="nf-layout-horizontal" className="nf-main-row-panel">
-            <Panel id="nf-sidebar" defaultSize="18%" minSize="12%" maxSize="42%">
+            <Panel id="nf-sidebar" defaultSize="18%" minSize="12%" maxSize="32%">
               <div className="nf-panel-fill">
-                <NodeLibrary specs={specs} onAdd={addNode} />
-                <WorkflowPromptPanel
-                  onComposed={(res) => {
-                    mergeSpecs(res.generated_node_specs);
-                    applyWorkflowPayload(res.workflow);
-                    setComposeResult(res);
-                  }}
+                <LeftPanel
+                  specs={specs}
+                  onAdd={handleAddNode}
+                  selectedSpec={selectedNode ? specById[selectedNode.data.type] : selectedSpec}
+                  recentFiles={recentFiles}
                 />
-                <PlanReviewPanel composeResult={composeResult} />
               </div>
             </Panel>
             <Separator className="nf-resize-handle nf-resize-v" />
@@ -605,6 +502,7 @@ export default function App() {
                   onNodesDelete={onNodesDelete}
                   onNodeDoubleClick={(_e: MouseEvent, node) => setModalNodeId(node.id)}
                   onNodeClick={(_e: MouseEvent, node) => handleSelectNode(node.id)}
+                  onDropSpec={handleDropSpec}
                 />
               </div>
             </Panel>
@@ -642,6 +540,7 @@ export default function App() {
               errorMessage={bottomError}
               logs={lastRunLogs.length ? lastRunLogs : undefined}
             />
+            {composeResult ? <PlanReviewPanel composeResult={composeResult} /> : null}
           </div>
         </Panel>
       </Group>
@@ -650,16 +549,6 @@ export default function App() {
         open={nodeCreatorOpen}
         onClose={() => setNodeCreatorOpen(false)}
         onCreate={handleCreateNodeSpec}
-      />
-
-      <NotebookImportModal
-        open={notebookImportOpen}
-        onClose={() => setNotebookImportOpen(false)}
-        onApply={(res: NotebookStandardizeResponse) => {
-          mergeSpecs(res.generated_node_specs);
-          applyWorkflowPayload(res.workflow);
-          setComposeResult(null);
-        }}
       />
 
       <NodeNotebookModal
@@ -672,16 +561,36 @@ export default function App() {
         workflowPayload={workflowPayloadFn}
         onClose={() => setModalNodeId(null)}
         onSave={handleModalSave}
-        onOutputsUpdate={(partial, logs) => {
+        onOutputsUpdate={(partial: NodeOutputsMap, logs: string[]) => {
           setNodeOutputs((prev) => ({ ...prev, ...partial }));
           setLastRunLogs(logs);
         }}
-        onNodeStatus={(nodeId, status) => {
+        onNodeStatus={(nodeId: string, status: FlowNodeData["status"]) => {
           setNodes((ns) =>
             ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status } } : n)),
           );
         }}
       />
+
+      {aiStudioOpen ? (
+        <AIStudioPage
+          onClose={() => setAiStudioOpen(false)}
+          onComposed={(res: ComposeWorkflowResponse) => {
+            mergeSpecs(res.generated_node_specs);
+            applyWorkflowPayload(res.workflow);
+            setComposeResult(res);
+          }}
+          onNotebookApply={(res: NotebookStandardizeResponse) => {
+            mergeSpecs(res.generated_node_specs);
+            applyWorkflowPayload(res.workflow);
+            setComposeResult(null);
+          }}
+          onNodeSpecCreated={(spec: NodeSpec) => {
+            mergeSpecs([spec]);
+            setSelectedSpec(spec);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

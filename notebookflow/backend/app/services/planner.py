@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from urllib import request
 
-from app.models import NodeSpec, PlanStep, WorkflowPlanRequest
+from app.models import AIConfig, NodeSpec, PlanStep, WorkflowPlanRequest
 
 NODE_CODE_CONVENTION = (
     "Node code convention: each node is a Python cell that receives "
@@ -98,12 +98,25 @@ def catalog_summary(specs: list[NodeSpec]) -> str:
     return "\n".join(lines)
 
 
-def _chat_completion(messages: list[dict], temperature: float = 0.2) -> str:
-    base_url = os.getenv("AI_API_BASE_URL", "").strip()
-    api_key = os.getenv("AI_API_KEY", "").strip()
-    model = os.getenv("AI_MODEL", "").strip()
+def _chat_completion(
+    messages: list[dict],
+    temperature: float = 0.2,
+    ai_config: AIConfig | None = None,
+) -> str:
+    base_url = (
+        ai_config.base_url if ai_config and ai_config.base_url
+        else os.getenv("AI_API_BASE_URL", "").strip()
+    )
+    api_key = (
+        ai_config.api_key if ai_config and ai_config.api_key
+        else os.getenv("AI_API_KEY", "").strip()
+    )
+    model = (
+        ai_config.model if ai_config and ai_config.model
+        else os.getenv("AI_MODEL", "").strip()
+    )
     if not base_url or not api_key or not model:
-        raise RuntimeError("AI_API_BASE_URL / AI_API_KEY / AI_MODEL not configured.")
+        raise RuntimeError("AI provider not configured (set base_url/api_key/model).")
     timeout = float(os.getenv("AI_TIMEOUT_SECONDS", "60"))
     url = f"{base_url.rstrip('/')}/chat/completions"
     body = {"model": model, "temperature": temperature, "messages": messages}
@@ -123,7 +136,9 @@ def _chat_completion(messages: list[dict], temperature: float = 0.2) -> str:
     return obj["choices"][0]["message"]["content"]
 
 
-def llm_available() -> bool:
+def llm_available(ai_config: AIConfig | None = None) -> bool:
+    if ai_config:
+        return bool(ai_config.base_url and ai_config.api_key and ai_config.model)
     return bool(
         os.getenv("AI_API_BASE_URL", "").strip()
         and os.getenv("AI_API_KEY", "").strip()
@@ -173,8 +188,12 @@ def _parse_steps(parsed: dict, max_steps: int, warnings: list[str]) -> list[Plan
     return steps[: max(1, max_steps)]
 
 
-def plan_workflow(req: WorkflowPlanRequest, specs: list[NodeSpec] | None = None) -> PlannerResult:
+def plan_workflow(
+    req: WorkflowPlanRequest,
+    specs: list[NodeSpec] | None = None,
+) -> PlannerResult:
     warnings: list[str] = []
+    ai_config = req.ai_config if hasattr(req, "ai_config") else None
     try:
         content = _chat_completion(
             [
@@ -186,7 +205,8 @@ def plan_workflow(req: WorkflowPlanRequest, specs: list[NodeSpec] | None = None)
                     ),
                 },
                 {"role": "user", "content": _build_plan_prompt(req, specs)},
-            ]
+            ],
+            ai_config=ai_config,
         )
         parsed = extract_json_object(content)
         if parsed is None:

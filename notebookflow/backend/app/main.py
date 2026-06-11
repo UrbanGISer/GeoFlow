@@ -17,9 +17,12 @@ from app.default_nodes import DEFAULT_NODE_SPECS
 from app.models import (
     ComposeWorkflowRequest,
     ComposeWorkflowResponse,
+    CWLExportRequest,
     GISImportRequest,
     GISImportResponse,
     HealthResponse,
+    NodeGenerateRequest,
+    NodeGenerateResponse,
     NotebookCell,
     NotebookStandardizeRequest,
     NotebookStandardizeResponse,
@@ -31,7 +34,9 @@ from app.models import (
     WorkflowPlanResponse,
 )
 from app.registry import add_gis_specs, add_temporary_specs, list_all_dynamic_specs
+from app.services.cwl_exporter import export_cwl
 from app.services.gis_ingest import ingest_articles_to_specs
+from app.services.node_generator import generate_node
 from app.services.notebook_standardizer import standardize_notebook
 from app.services.planner import plan_workflow
 from app.services.workflow_composer import compose_workflow
@@ -110,6 +115,8 @@ def root() -> dict[str, str]:
 
 @app.on_event("startup")
 def _startup() -> None:
+    import os
+    os.environ.setdefault("MPLBACKEND", "Agg")
     TMP_UPLOADS.mkdir(parents=True, exist_ok=True)
     TMP_ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
@@ -247,3 +254,20 @@ def get_artifact(filename: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(path, media_type="text/html; charset=utf-8")
+
+
+@app.post("/api/node/generate", response_model=NodeGenerateResponse)
+def node_generate_endpoint(payload: NodeGenerateRequest) -> NodeGenerateResponse:
+    """AI-powered node generator: describe what you want, get a runnable NodeSpec."""
+    try:
+        spec, warnings = generate_node(payload.description, payload.category, payload.ai_config)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    add_temporary_specs([spec])
+    return NodeGenerateResponse(node_spec=spec, warnings=warnings)
+
+
+@app.post("/api/workflow/export/cwl")
+def export_cwl_endpoint(payload: CWLExportRequest) -> dict:
+    """Export the current workflow as a CWL v1.2 Workflow stub (interface reservation)."""
+    return export_cwl(payload.nodes, payload.edges)

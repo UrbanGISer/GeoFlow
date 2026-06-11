@@ -120,6 +120,37 @@ export interface ComposeWorkflowResponse {
   validation: WorkflowValidation;
 }
 
+export interface AIConfig {
+  base_url: string;
+  api_key: string;
+  model: string;
+}
+
+export const DEFAULT_AI_CONFIG: AIConfig = {
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  api_key: "",
+  model: "gemini-2.5-flash",
+};
+
+export const AI_CONFIG_STORAGE_KEY = "geoflow.aiConfig.v1";
+
+export function loadAIConfig(): AIConfig {
+  try {
+    const raw = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+    if (raw) return { ...DEFAULT_AI_CONFIG, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { ...DEFAULT_AI_CONFIG };
+}
+
+export function saveAIConfig(cfg: AIConfig): void {
+  localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+}
+
+export interface NodeGenerateResponse {
+  node_spec: NodeSpec;
+  warnings: string[];
+}
+
 export interface GISArticleInput {
   title: string;
   method: string;

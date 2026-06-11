@@ -837,3 +837,309 @@ body,
 .nf-node-creator-grid textarea {
   resize: vertical;
 }
+
+/* ── AI Studio button ─────────────────────────────────────────────────────── */
+.nf-btn-ai {
+  border-color: #6a1b9a;
+  background: linear-gradient(135deg, #6a1b9a 0%, #1976d2 100%);
+  color: #fff;
+  font-weight: 600;
+}
+
+.nf-btn-ai:hover {
+  background: linear-gradient(135deg, #7b1fa2 0%, #1565c0 100%);
+}
+
+/* ── Node library: search + draggable items ──────────────────────────────── */
+.nf-sidebar-search {
+  padding: 0 0 8px;
+}
+
+.nf-search-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.nf-group-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #999;
+  font-weight: 400;
+}
+
+.nf-node-item-draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.nf-node-item-draggable:active {
+  cursor: grabbing;
+}
+
+.nf-node-item-selected {
+  background: #e8f0fe;
+  border-color: #1976d2;
+}
+
+/* ── Left panel with tabs ─────────────────────────────────────────────────── */
+.nf-left-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #fafafa;
+  border-right: 1px solid #ccc;
+}
+
+.nf-left-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid #ddd;
+  background: #f0f0f0;
+}
+
+.nf-left-tab-btn {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s;
+}
+
+.nf-left-tab-btn:hover {
+  color: #1976d2;
+}
+
+.nf-left-tab-btn-active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  background: #fff;
+}
+
+.nf-left-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-left-tab-content .nf-sidebar {
+  border-right: none;
+  width: 100%;
+}
+
+.nf-left-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── Info tab ─────────────────────────────────────────────────────────────── */
+.nf-info-header {
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+}
+
+.nf-info-label {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.nf-info-category {
+  font-size: 11px;
+  color: #777;
+  margin-top: 2px;
+}
+
+.nf-info-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.nf-info-h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nf-info-port-list,
+.nf-info-param-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.nf-info-param-name {
+  font-weight: 600;
+}
+
+.nf-info-param-type {
+  color: #888;
+}
+
+.nf-required {
+  color: #c62828;
+  font-weight: 700;
+}
+
+/* ── Code editor expand button ────────────────────────────────────────────── */
+.nf-node-editor-h3-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.nf-node-editor-h3-row .nf-node-editor-h3 {
+  margin-bottom: 0;
+}
+
+/* ── AI Studio overlay ────────────────────────────────────────────────────── */
+.nf-ai-studio-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #f5f5f5;
+  overflow-y: auto;
+}
+
+.nf-ai-studio-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.nf-ai-studio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.nf-ai-studio-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #6a1b9a, #1976d2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.nf-ai-studio-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+/* ── AI Settings panel ────────────────────────────────────────────────────── */
+.nf-ai-settings-panel {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.nf-ai-settings-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.nf-ai-settings-sub {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: #666;
+}
+
+.nf-ai-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.nf-ai-settings-grid .nf-field:last-child {
+  grid-column: span 2;
+}
+
+.nf-ai-settings-grid .nf-field input,
+.nf-ai-settings-grid .nf-field select {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 100%;
+}
+
+/* ── AI Studio tool tabs ──────────────────────────────────────────────────── */
+.nf-ai-studio-tools {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.nf-tab-bar {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f8f8f8;
+}
+
+.nf-tab-btn {
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s;
+}
+
+.nf-tab-btn:hover {
+  color: #1976d2;
+}
+
+.nf-tab-btn-active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  background: #fff;
+}
+
+.nf-tab-content {
+  padding: 16px 20px 20px;
+}
+
+.nf-ai-tool-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nf-ai-tool-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+  background: #f8f8f8;
+  border-left: 3px solid #1976d2;
+  padding: 8px 10px;
+  border-radius: 0 4px 4px 0;
+}
+
