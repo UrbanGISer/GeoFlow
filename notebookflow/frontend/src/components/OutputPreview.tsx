@@ -30,7 +30,6 @@ function OutputPreviewInner({
   const previewRows = df?.preview ?? [];
   const html = output?.html_out;
   const [expanded, setExpanded] = useState<null | "table" | "html">(null);
-  const [bottomTab, setBottomTab] = useState<"console" | "logs">("console");
   const htmlSrcCache = useRef<Record<string, string>>({});
 
   const wrapClass =
@@ -48,47 +47,14 @@ function OutputPreviewInner({
     ? htmlSrcCache.current[nodeId] ?? htmlSrc
     : htmlSrc;
 
-  const showTabs = variant === "panel";
-  const showConsole = !showTabs || bottomTab === "console";
-
+  // Logs live in the left rail's ≣ Logs tab — the bottom panel is
+  // output-only (table / map / chart) to stay uncluttered.
   return (
     <section className={wrapClass}>
       <div className="nf-bottom-head">
-        {showTabs ? (
-          <div className="nf-bottom-tabbar">
-            <button
-              type="button"
-              className={`nf-bottom-tab${bottomTab === "console" ? " nf-bottom-tab-active" : ""}`}
-              onClick={() => setBottomTab("console")}
-            >
-              Console
-            </button>
-            {nodeLabel ? <span className="nf-bottom-node-label" title={nodeLabel}>{nodeLabel}</span> : null}
-            <button
-              type="button"
-              className={`nf-bottom-tab${bottomTab === "logs" ? " nf-bottom-tab-active" : ""}`}
-              onClick={() => setBottomTab("logs")}
-            >
-              Logs{logs && logs.length ? ` (${logs.length})` : ""}
-            </button>
-          </div>
-        ) : (
-          <>
-            {title ? <h2 className="nf-panel-title">{title}</h2> : null}
-            {nodeLabel ? <span className="nf-muted">{nodeLabel}</span> : null}
-          </>
-        )}
+        {title ? <h2 className="nf-panel-title">{title}</h2> : null}
+        {nodeLabel ? <span className="nf-bottom-node-label" title={nodeLabel}>{nodeLabel}</span> : null}
       </div>
-      {showTabs && bottomTab === "logs" ? (
-        <div className="nf-bottom-body">
-          {logs && logs.length ? (
-            <pre className="nf-logs-full">{logs.join("\n")}</pre>
-          ) : (
-            <p className="nf-muted">No logs yet — run a node or the workflow.</p>
-          )}
-        </div>
-      ) : null}
-      {showConsole ? (
       <div className="nf-bottom-body">
         {errorMessage ? (
           <div className="nf-error-banner">{errorMessage}</div>
@@ -126,7 +92,7 @@ function OutputPreviewInner({
                   </tr>
                 </thead>
               </table>
-              <VirtualTableBody rows={previewRows} columns={df.columns} rowHeight={30} height={150} />
+              <VirtualTableBody rows={previewRows} columns={df.columns} rowHeight={30} height={300} />
             </div>
           </div>
         ) : null}
@@ -145,14 +111,13 @@ function OutputPreviewInner({
           </div>
         ) : null}
 
-        {!showTabs && logs && logs.length > 0 ? (
+        {variant === "embedded" && logs && logs.length > 0 ? (
           <details className="nf-logs">
             <summary>Logs ({logs.length})</summary>
             <pre>{logs.join("\n")}</pre>
           </details>
         ) : null}
       </div>
-      ) : null}
 
       {expanded && (df || html) ? (
         <div className="nf-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="expanded-output-title">

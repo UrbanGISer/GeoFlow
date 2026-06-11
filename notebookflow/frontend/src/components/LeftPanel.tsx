@@ -6,13 +6,14 @@ import { Markdown } from "./Markdown";
 import { NodeLibrary } from "./NodeLibrary";
 import { WorkspacePanel } from "./WorkspacePanel";
 
-export type LeftTab = "nodes" | "info" | "workspace" | "ai";
+export type LeftTab = "nodes" | "info" | "workspace" | "ai" | "logs";
 
 const TABS: Array<{ id: LeftTab; icon: string; label: string }> = [
   { id: "nodes", icon: "▦", label: "Nodes" },
   { id: "info", icon: "ⓘ", label: "Info" },
   { id: "workspace", icon: "📁", label: "Workspace" },
   { id: "ai", icon: "✦", label: "AI Settings" },
+  { id: "logs", icon: "≣", label: "Logs" },
 ];
 
 /** KNIME-style vertical icon rail — always visible; clicking an icon
@@ -49,6 +50,8 @@ interface LeftPanelProps {
   onOpenFile?: (path: string) => void;
   activeTab: LeftTab;
   onCollapse: () => void;
+  /** Run logs shown in the ≣ Logs tab. */
+  logs?: string[];
 }
 
 function InfoTab({ spec }: { spec?: NodeSpec | null }) {
@@ -130,6 +133,7 @@ export function LeftPanel({
   onOpenFile,
   activeTab,
   onCollapse,
+  logs,
 }: LeftPanelProps) {
   const [librarySpec, setLibrarySpec] = useState<NodeSpec | null>(null);
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => loadAIConfig());
@@ -157,6 +161,17 @@ export function LeftPanel({
         {activeTab === "ai" ? (
           <div className="nf-left-tab-body" style={{ overflowY: "auto", padding: "10px" }}>
             <AISettingsPanel config={aiConfig} onChange={setAiConfig} compact />
+          </div>
+        ) : null}
+        {activeTab === "logs" ? (
+          <div className="nf-left-tab-body" style={{ overflowY: "auto", padding: "10px" }}>
+            {logs && logs.length ? (
+              <pre className="nf-logs-full">{logs.join("\n")}</pre>
+            ) : (
+              <p className="nf-muted" style={{ fontSize: 12 }}>
+                No logs yet — run a node or the workflow.
+              </p>
+            )}
           </div>
         ) : null}
       </div>

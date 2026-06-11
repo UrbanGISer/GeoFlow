@@ -940,7 +940,7 @@ export default function App() {
       </header>
 
       <Group orientation="vertical" id="nf-layout-vertical" className="nf-workspace">
-        <Panel id="nf-main-area" defaultSize="72%" minSize="35%">
+        <Panel id="nf-main-area" defaultSize="58%" minSize="30%">
           <div className="nf-main-with-rail">
           <SideRail
             active={leftTab}
@@ -959,6 +959,7 @@ export default function App() {
                       onOpenFile={handleOpenWorkspaceFile}
                       activeTab={leftTab}
                       onCollapse={() => setLeftTab(null)}
+                      logs={lastRunLogs}
                     />
                   </div>
                 </Panel>
@@ -1055,7 +1056,7 @@ export default function App() {
         {bottomOpen ? (
           <>
             <Separator className="nf-resize-handle nf-resize-h" />
-            <Panel id="nf-console" defaultSize="28%" minSize="12%" maxSize="55%">
+            <Panel id="nf-console" defaultSize="42%" minSize="12%" maxSize="65%">
               <div className="nf-panel-fill" style={{ position: "relative" }}>
                 <button
                   type="button"
