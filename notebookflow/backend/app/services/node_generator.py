@@ -122,6 +122,85 @@ _BANNED = re.compile(
 )
 
 
+_CODE_SYSTEM_PROMPT = """\
+You write a single Python code cell for a GeoFlow node. The cell receives:
+  df_in   - pandas/geopandas DataFrame from upstream (may be None)
+  df_in_2, df_in_3, ... and df_ins - extra inputs for multi-port nodes
+  params  - dict of user parameters
+
+Rules:
+1. DATA mode: the cell MUST assign df_out (a pandas/geopandas DataFrame).
+   VIEW mode: the cell MUST assign html_out (an HTML string — plotly
+   fig.to_html(include_plotlyjs='cdn'), folium m.get_root().render(),
+   or a base64 <img> from matplotlib).
+2. Imports go inside the cell. Available: pandas, geopandas, plotly,
+   folium, matplotlib, seaborn, numpy.
+3. Never use subprocess, os.system, eval, exec, socket, pickle.loads,
+   shutil.rmtree.
+4. Reply with ONLY the Python code — no markdown fences, no explanation.
+"""
+
+
+def generate_code(
+    description: str,
+    mode: str = "data",
+    current_code: str = "",
+    data_context: str = "",
+    ai_config: AIConfig | None = None,
+) -> tuple[str, list[str]]:
+    """Generate (or rewrite) a node code cell from a plain-English ask."""
+    warnings: list[str] = []
+    target = "html_out (VIEW mode)" if mode == "html" else "df_out (DATA mode)"
+    parts = [f"Write the node code cell. Output target: {target}.", f"Task: {description}"]
+    if data_context:
+        parts.append(f"Data context: {data_context}")
+    if current_code.strip():
+        parts.append(f"Current code (rewrite/extend as needed):\n{current_code}")
+
+    base_url = (
+        ai_config.base_url if ai_config and ai_config.base_url
+        else os.environ.get("AI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    )
+    api_key = ai_config.api_key if ai_config and ai_config.api_key else os.environ.get("AI_API_KEY", "")
+    model = ai_config.model if ai_config and ai_config.model else os.environ.get("AI_MODEL", "gemini-2.5-flash")
+    if not api_key:
+        raise RuntimeError("AI provider not configured — set your API key in the AI settings.")
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _CODE_SYSTEM_PROMPT},
+            {"role": "user", "content": "\n\n".join(parts)},
+        ],
+        "temperature": 0.2,
+    }).encode()
+    req = urllib.request.Request(
+        f"{base_url.rstrip('/')}/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+    )
+    timeout = int(os.environ.get("AI_TIMEOUT_SECONDS", "60"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            raw = json.loads(resp.read().decode())["choices"][0]["message"]["content"]
+    except Exception as exc:
+        raise RuntimeError(f"LLM call failed: {exc}") from exc
+
+    code = raw.strip()
+    # Strip markdown fences if the model added them anyway.
+    fence = re.match(r"^```(?:python)?\s*\n(.*?)\n?```\s*$", code, re.DOTALL)
+    if fence:
+        code = fence.group(1)
+
+    banned = _BANNED.findall(code)
+    if banned:
+        raise RuntimeError(f"Generated code contained banned pattern(s): {banned}")
+    out_var = "html_out" if mode == "html" else "df_out"
+    if out_var not in code:
+        warnings.append(f"Generated code does not assign {out_var} — review before running.")
+    return code, warnings
+
+
 def generate_node(
     description: str,
     category: str = "Python Script",

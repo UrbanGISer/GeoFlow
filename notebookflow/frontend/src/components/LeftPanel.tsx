@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { NodeSpec } from "../types";
+import { loadAIConfig, type AIConfig } from "../types";
+import { AISettingsPanel } from "./AISettingsPanel";
 import { Markdown } from "./Markdown";
 import { NodeLibrary } from "./NodeLibrary";
 import { WorkspacePanel } from "./WorkspacePanel";
 
-type LeftTab = "nodes" | "info" | "workspace";
+type LeftTab = "nodes" | "info" | "workspace" | "ai";
 
 interface LeftPanelProps {
   specs: NodeSpec[];
@@ -87,6 +89,7 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
 export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<LeftTab>("nodes");
   const [librarySpec, setLibrarySpec] = useState<NodeSpec | null>(null);
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => loadAIConfig());
 
   // Canvas selection wins; otherwise last library click.
   const displaySpec = selectedSpec ?? librarySpec;
@@ -95,6 +98,7 @@ export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
     { id: "nodes", label: "Nodes" },
     { id: "info", label: "Info" },
     { id: "workspace", label: "Workspace" },
+    { id: "ai", label: "AI" },
   ];
 
   return (
@@ -122,6 +126,11 @@ export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
         ) : null}
         {activeTab === "info" ? <InfoTab spec={displaySpec} /> : null}
         {activeTab === "workspace" ? <WorkspacePanel /> : null}
+        {activeTab === "ai" ? (
+          <div className="nf-left-tab-body" style={{ overflowY: "auto", padding: "10px" }}>
+            <AISettingsPanel config={aiConfig} onChange={setAiConfig} compact />
+          </div>
+        ) : null}
       </div>
     </div>
   );

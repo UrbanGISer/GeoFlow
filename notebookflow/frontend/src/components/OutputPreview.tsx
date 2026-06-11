@@ -30,6 +30,7 @@ function OutputPreviewInner({
   const previewRows = df?.preview ?? [];
   const html = output?.html_out;
   const [expanded, setExpanded] = useState<null | "table" | "html">(null);
+  const [bottomTab, setBottomTab] = useState<"console" | "logs">("console");
   const htmlSrcCache = useRef<Record<string, string>>({});
 
   const wrapClass =
@@ -47,12 +48,44 @@ function OutputPreviewInner({
     ? htmlSrcCache.current[nodeId] ?? htmlSrc
     : htmlSrc;
 
+  const showTabs = variant === "panel";
+  const showConsole = !showTabs || bottomTab === "console";
+
   return (
     <section className={wrapClass}>
       <div className="nf-bottom-head">
-        {title ? <h2 className="nf-panel-title">{title}</h2> : null}
+        {showTabs ? (
+          <div className="nf-bottom-tabbar">
+            <button
+              type="button"
+              className={`nf-bottom-tab${bottomTab === "console" ? " nf-bottom-tab-active" : ""}`}
+              onClick={() => setBottomTab("console")}
+            >
+              Console
+            </button>
+            <button
+              type="button"
+              className={`nf-bottom-tab${bottomTab === "logs" ? " nf-bottom-tab-active" : ""}`}
+              onClick={() => setBottomTab("logs")}
+            >
+              Logs{logs && logs.length ? ` (${logs.length})` : ""}
+            </button>
+          </div>
+        ) : title ? (
+          <h2 className="nf-panel-title">{title}</h2>
+        ) : null}
         {nodeLabel ? <span className="nf-muted">{nodeLabel}</span> : null}
       </div>
+      {showTabs && bottomTab === "logs" ? (
+        <div className="nf-bottom-body">
+          {logs && logs.length ? (
+            <pre className="nf-logs-full">{logs.join("\n")}</pre>
+          ) : (
+            <p className="nf-muted">No logs yet — run a node or the workflow.</p>
+          )}
+        </div>
+      ) : null}
+      {showConsole ? (
       <div className="nf-bottom-body">
         {errorMessage ? (
           <div className="nf-error-banner">{errorMessage}</div>
@@ -109,13 +142,14 @@ function OutputPreviewInner({
           </div>
         ) : null}
 
-        {logs && logs.length > 0 ? (
+        {!showTabs && logs && logs.length > 0 ? (
           <details className="nf-logs">
             <summary>Logs ({logs.length})</summary>
             <pre>{logs.join("\n")}</pre>
           </details>
         ) : null}
       </div>
+      ) : null}
 
       {expanded && (df || html) ? (
         <div className="nf-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="expanded-output-title">

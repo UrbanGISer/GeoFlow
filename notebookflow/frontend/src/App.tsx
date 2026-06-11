@@ -222,8 +222,19 @@ export default function App() {
     });
   }, []);
 
-  // Sequence for default node notes ("Node 1", "Node 2", …), KNIME style.
-  const nodeSeqRef = useRef(1);
+  // Default node notes ("Node 1", "Node 2", …) always continue from the
+  // highest existing number, so copy/paste and load renumber correctly.
+  const nodesRef = useRef<Node<FlowNodeData>[]>([]);
+  nodesRef.current = nodes;
+
+  const nextNodeNumber = useCallback((ns: Node<FlowNodeData>[]): number => {
+    let max = 0;
+    for (const n of ns) {
+      const m = /^Node (\d+)$/.exec(String(n.data.annotation ?? ""));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    return max + 1;
+  }, []);
 
   const buildNode = useCallback(
     (spec: NodeSpec, position: { x: number; y: number }): Node<FlowNodeData> => {
@@ -240,12 +251,12 @@ export default function App() {
           code: spec.default_code,
           status: "idle",
           color: spec.color,
-          annotation: `Node ${nodeSeqRef.current++}`,
+          annotation: `Node ${nextNodeNumber(nodesRef.current)}`,
           ...extras,
         },
       };
     },
-    [],
+    [nextNodeNumber],
   );
 
   const updateNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
@@ -431,9 +442,15 @@ export default function App() {
       ? { x: at.x - minX, y: at.y - minY }
       : { x: 40 * pasteCountRef.current, y: 40 * pasteCountRef.current };
     const idMap = new Map<string, string>();
+    // Pasted copies of "Node N" notes get fresh numbers (Node 4 → Node 5 …).
+    let seq = nextNodeNumber(nodesRef.current);
     const newNodes: Node<FlowNodeData>[] = clip.nodes.map((cn) => {
       const nid = newNodeId();
       idMap.set(cn.id, nid);
+      const data = structuredClone(cn.data);
+      if (cn.type !== ANNOTATION_NODE_TYPE && /^Node \d+$/.test(String(data.annotation ?? ""))) {
+        data.annotation = `Node ${seq++}`;
+      }
       return {
         id: nid,
         type: cn.type ?? "notebook",
@@ -442,7 +459,7 @@ export default function App() {
         height: cn.height,
         zIndex: cn.zIndex,
         selected: true,
-        data: structuredClone(cn.data),
+        data,
       };
     });
     const newEdges: Edge[] = clip.edges.map((ce, i) => ({
@@ -454,7 +471,7 @@ export default function App() {
     }));
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), ...newNodes]);
     setEdges((es) => [...es, ...newEdges]);
-  }, []);
+  }, [nextNodeNumber]);
 
   const runNodeById = useCallback(
     async (nodeId: string) => {
@@ -641,7 +658,6 @@ export default function App() {
         id: e.id, source: e.source, target: e.target,
         sourceHandle: e.sourceHandle ?? "df_out", targetHandle: e.targetHandle ?? "df_in",
       }));
-      nodeSeqRef.current = nextNodes.length + 1;
       setNodes([...annoNodes, ...nextNodes]); setEdges(nextEdges);
       setSelectedId(null); setModalNodeId(null); setNodeOutputs({}); setWorkflowError(null);
     },

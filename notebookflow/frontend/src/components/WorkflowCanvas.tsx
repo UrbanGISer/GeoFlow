@@ -12,6 +12,7 @@ import {
   OnNodesDelete,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useReactFlow,
 } from "@xyflow/react";
 import { useMemo } from "react";
@@ -123,6 +124,13 @@ function WorkflowCanvasInner({
             onPaneMenu?.(pos, screenToFlowPosition(pos));
           }}
           deleteKeyCode={["Delete", "Backspace"]}
+          // KNIME-style rubber-band: left-drag on empty canvas selects;
+          // pan with middle-button drag or scroll/trackpad. Right button
+          // stays reserved for the context menu. Partial overlap selects.
+          selectionOnDrag
+          selectionMode={SelectionMode.Partial}
+          panOnDrag={[1]}
+          panOnScroll
           fitView
           defaultEdgeOptions={{ style: { stroke: "#222", strokeWidth: 1.5 } }}
           proOptions={{ hideAttribution: true }}

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { composeWorkflow, generateNode, planWorkflow } from "../api/client";
-import type { ComposeWorkflowResponse, NotebookStandardizeResponse } from "../types";
-import { type AIConfig, DEFAULT_AI_CONFIG, loadAIConfig, saveAIConfig } from "../types";
+import type { AIConfig, ComposeWorkflowResponse, NotebookStandardizeResponse } from "../types";
+import { loadAIConfig } from "../types";
+import { AISettingsPanel } from "./AISettingsPanel";
 import { NotebookImportModal } from "./NotebookImportModal";
 
 type AITab = "builder" | "creator" | "notebook";
@@ -11,83 +12,6 @@ interface AIStudioPageProps {
   onComposed: (res: ComposeWorkflowResponse) => void;
   onNotebookApply: (res: NotebookStandardizeResponse) => void;
   onNodeSpecCreated: (spec: import("../types").NodeSpec) => void;
-}
-
-function AISettingsPanel({ config, onChange }: { config: AIConfig; onChange: (c: AIConfig) => void }) {
-  const [localKey, setLocalKey] = useState(config.api_key);
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    const next = { ...config, api_key: localKey };
-    onChange(next);
-    saveAIConfig(next);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
-  };
-
-  return (
-    <div className="nf-ai-settings-panel">
-      <h3 className="nf-ai-settings-title">AI Provider Settings</h3>
-      <p className="nf-ai-settings-sub">
-        Settings are saved locally in your browser. Defaults are pre-configured for Google AI Studio (Gemini — free tier: 15 RPM, 1500 RPD).
-      </p>
-      <div className="nf-ai-settings-grid">
-        <div className="nf-field">
-          <label className="nf-field-label">Base URL</label>
-          <input
-            type="text"
-            value={config.base_url}
-            onChange={(e) => onChange({ ...config, base_url: e.target.value })}
-          />
-        </div>
-        <div className="nf-field">
-          <label className="nf-field-label">API Key</label>
-          <input
-            type="password"
-            placeholder="Paste your Google AI Studio API key here"
-            value={localKey}
-            onChange={(e) => setLocalKey(e.target.value)}
-            onBlur={() => onChange({ ...config, api_key: localKey })}
-          />
-          <span className="nf-field-hint">
-            Get a free key at{" "}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-              aistudio.google.com/apikey
-            </a>
-          </span>
-        </div>
-        <div className="nf-field">
-          <label className="nf-field-label">Model</label>
-          <select
-            value={config.model}
-            onChange={(e) => onChange({ ...config, model: e.target.value })}
-          >
-            <option value="gemini-2.5-flash">gemini-2.5-flash (recommended, free)</option>
-            <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
-            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-            <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
-            <option value="deepseek-chat">deepseek-chat</option>
-          </select>
-        </div>
-        <div className="nf-field nf-field-row">
-          <button type="button" className="nf-btn nf-btn-primary" onClick={handleSave}>
-            {saved ? "Saved ✓" : "Save Settings"}
-          </button>
-          <button
-            type="button"
-            className="nf-btn"
-            onClick={() => {
-              onChange({ ...DEFAULT_AI_CONFIG });
-              setLocalKey("");
-            }}
-          >
-            Reset to Defaults
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function WorkflowBuilderTab({ aiConfig, onComposed }: { aiConfig: AIConfig; onComposed: (r: ComposeWorkflowResponse) => void }) {

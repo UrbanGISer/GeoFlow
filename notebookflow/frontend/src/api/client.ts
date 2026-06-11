@@ -203,6 +203,21 @@ export async function generateNode(payload: {
   return parseJsonWithHttpError<NodeGenerateResponse>(res, "Node generate");
 }
 
+export async function generateCode(payload: {
+  description: string;
+  mode?: "data" | "html";
+  current_code?: string;
+  data_context?: string;
+  ai_config?: AIConfig | null;
+}): Promise<{ code: string; warnings: string[] }> {
+  const res = await fetch(`${API_PREFIX}/code/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJsonWithHttpError<{ code: string; warnings: string[] }>(res, "Code generate");
+}
+
 export async function importGISLibrary(payload: { articles: GISArticleInput[] }): Promise<GISImportResponse> {
   const res = await fetch(`${API_PREFIX}/library/gis/import`, {
     method: "POST",

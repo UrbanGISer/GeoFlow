@@ -15,6 +15,8 @@ from fastapi.responses import FileResponse, Response
 from app.data_store import DataStore, ResultCache
 from app.default_nodes import DEFAULT_NODE_SPECS
 from app.models import (
+    CodeGenerateRequest,
+    CodeGenerateResponse,
     ComposeWorkflowRequest,
     ComposeWorkflowResponse,
     CWLExportRequest,
@@ -37,7 +39,7 @@ from app.registry import add_gis_specs, add_temporary_specs, list_all_dynamic_sp
 from app.services import workspace as ws
 from app.services.cwl_exporter import export_cwl
 from app.services.gis_ingest import ingest_articles_to_specs
-from app.services.node_generator import generate_node
+from app.services.node_generator import generate_code, generate_node
 from app.services.notebook_standardizer import standardize_notebook
 from app.services.planner import plan_workflow
 from app.services.workflow_composer import compose_workflow
@@ -266,6 +268,22 @@ def node_generate_endpoint(payload: NodeGenerateRequest) -> NodeGenerateResponse
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     add_temporary_specs([spec])
     return NodeGenerateResponse(node_spec=spec, warnings=warnings)
+
+
+@app.post("/api/code/generate", response_model=CodeGenerateResponse)
+def code_generate_endpoint(payload: CodeGenerateRequest) -> CodeGenerateResponse:
+    """AI Coding inside a node: generate/rewrite the node's code cell."""
+    try:
+        code, warnings = generate_code(
+            payload.description,
+            payload.mode,
+            payload.current_code,
+            payload.data_context,
+            payload.ai_config,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return CodeGenerateResponse(code=code, warnings=warnings)
 
 
 @app.post("/api/workflow/export/cwl")

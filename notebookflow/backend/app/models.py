@@ -183,6 +183,20 @@ class NodeGenerateResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class CodeGenerateRequest(BaseModel):
+    """AI Coding inside a node: generate/rewrite the node's code cell."""
+    description: str
+    mode: str = "data"  # "data" → must set df_out; "html" → must set html_out
+    current_code: str = ""
+    data_context: str = ""  # e.g. upstream column names
+    ai_config: AIConfig | None = None
+
+
+class CodeGenerateResponse(BaseModel):
+    code: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CWLExportRequest(WorkflowPayload):
     pass
 
