@@ -118,7 +118,8 @@ def read_file(path: str) -> dict[str, str]:
     return {"path": str(target), "content": target.read_text(encoding="utf-8", errors="replace")}
 
 
-_PICKER_SCRIPT = """\
+# Last-resort picker (Linux without zenity): tkinter in its own process.
+_TK_PICKER_SCRIPT = """\
 import sys
 import tkinter as tk
 from tkinter import filedialog
@@ -140,26 +141,85 @@ sys.stdout.write(path or '')
 def pick_folder_native(initial: str | None = None) -> dict[str, str]:
     """Open the OS folder dialog on the local machine (backend == local).
 
-    Runs tkinter in a fresh subprocess so the dialog owns its own main
-    thread (required on macOS). Returns {"path": ""} when cancelled.
-    Raises RuntimeError when no GUI is available — callers fall back to
-    the in-app folder browser.
+    Uses the platform's own dialog so no "Python" app appears:
+      macOS   → osascript `choose folder` (standard system sheet)
+      Windows → PowerShell FolderBrowserDialog (Explorer-style, topmost,
+                no console flash)
+      Linux   → zenity, then tkinter as last resort
+    Returns {"path": ""} when cancelled. Raises RuntimeError when no GUI
+    is available — callers fall back to the in-app folder browser.
     """
+    import platform
+    import shutil
     import subprocess
     import sys
+    from pathlib import Path as _P
+
+    system = platform.system()
+    init = initial if initial and _P(initial).is_dir() else None
 
     try:
+        if system == "Darwin":
+            esc = (init or "").replace("\\", "\\\\").replace('"', '\\"')
+            script = 'POSIX path of (choose folder with prompt "Choose folder")'
+            if init:
+                script = (
+                    f'POSIX path of (choose folder with prompt "Choose folder" '
+                    f'default location POSIX file "{esc}")'
+                )
+            proc = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=300,
+            )
+            if proc.returncode != 0:
+                err = proc.stderr.lower()
+                if "cancel" in err:  # "User canceled." → not an error
+                    return {"path": ""}
+                raise RuntimeError(proc.stderr.strip()[:300])
+            return {"path": proc.stdout.strip().rstrip("/")}
+
+        if system == "Windows":
+            init_ps = (init or "").replace("'", "''")
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$d.Description = 'Choose folder'; "
+                + (f"$d.SelectedPath = '{init_ps}'; " if init else "")
+                + "$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; "
+                "if ($d.ShowDialog($o) -eq [System.Windows.Forms.DialogResult]::OK) "
+                "{ Write-Output $d.SelectedPath }"
+            )
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", ps],
+                capture_output=True, text=True, timeout=300, creationflags=flags,
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.strip()[:300])
+            return {"path": proc.stdout.strip()}
+
+        # Linux / other
+        if shutil.which("zenity"):
+            cmd = ["zenity", "--file-selection", "--directory", "--title=Choose folder"]
+            if init:
+                cmd.append(f"--filename={init.rstrip('/')}/")
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if proc.returncode == 1:  # cancelled
+                return {"path": ""}
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.strip()[:300])
+            return {"path": proc.stdout.strip()}
+
         proc = subprocess.run(
-            [sys.executable, "-c", _PICKER_SCRIPT, initial or ""],
-            capture_output=True,
-            text=True,
-            timeout=300,
+            [sys.executable, "-c", _TK_PICKER_SCRIPT, init or ""],
+            capture_output=True, text=True, timeout=300,
         )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip()[:300])
+        return {"path": proc.stdout.strip()}
+    except RuntimeError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"Native folder dialog unavailable: {exc}") from exc
-    if proc.returncode != 0:
-        raise RuntimeError(f"Native folder dialog failed: {proc.stderr.strip()[:300]}")
-    return {"path": proc.stdout.strip()}
 
 
 def delete_path(path: str) -> dict[str, str]:

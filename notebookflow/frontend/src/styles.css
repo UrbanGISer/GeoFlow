@@ -931,6 +931,10 @@ body,
   line-height: 1;
 }
 
+.nf-rail-icon-lg {
+  font-size: 34px; /* 1.5× base — for glyphs that render small (≣) */
+}
+
 .nf-left-panel {
   position: relative;
   display: flex;
