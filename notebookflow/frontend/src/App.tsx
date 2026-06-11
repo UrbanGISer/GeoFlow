@@ -10,7 +10,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from "@xyflow/react";
-import { fetchNodeSpecs, runSingleNode, runWorkflow, workspaceRead } from "./api/client";
+import { exportIpynb, fetchNodeSpecs, runSingleNode, runWorkflow, workspaceRead } from "./api/client";
 import { AIStudioPage } from "./components/AIStudioPage";
 import {
   ANNOTATION_NODE_TYPE,
@@ -152,6 +152,10 @@ export default function App() {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   // KNIME-style icon rail: null = panel collapsed (default).
   const [leftTab, setLeftTab] = useState<LeftTab | null>(null);
+  // Right node panel + bottom console fold away to maximize the canvas.
+  const [rightOpen, setRightOpen] = useState(true);
+  const [bottomOpen, setBottomOpen] = useState(true);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const clipboardRef = useRef<ClipboardContent | null>(null);
   const pasteCountRef = useRef(0);
 
@@ -616,6 +620,29 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   }, [buildSavedWorkflow]);
 
+  // Workflow → equivalent .ipynb (backend converts: topo order, deduped
+  // imports, df_in/df_out variable bridging between cells).
+  const notebookContent = useCallback(async (): Promise<string> => {
+    const payload = buildPayload(nodes, edges);
+    if (!payload.nodes.length) throw new Error("Canvas is empty — nothing to export.");
+    const nb = await exportIpynb(payload);
+    return JSON.stringify(nb, null, 1);
+  }, [nodes, edges]);
+
+  const downloadNotebook = useCallback(async () => {
+    try {
+      const content = await notebookContent();
+      const blob = new Blob([content], { type: "application/x-ipynb+json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "geoflow-workflow.ipynb";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }, [notebookContent]);
+
   const annotationBoxToNode = useCallback((a: AnnotationBoxPayload): Node<FlowNodeData> => ({
     id: a.id || newNodeId(),
     type: ANNOTATION_NODE_TYPE,
@@ -889,6 +916,14 @@ export default function App() {
           </button>
           <button
             type="button"
+            className="nf-btn"
+            title="Export the workflow as an equivalent Jupyter notebook (.ipynb)"
+            onClick={() => setExportModalOpen(true)}
+          >
+            Export
+          </button>
+          <button
+            type="button"
             className="nf-btn nf-btn-ai"
             onClick={() => setAiStudioOpen(true)}
           >
@@ -967,47 +1002,95 @@ export default function App() {
                 />
               </div>
             </Panel>
-            <Separator className="nf-resize-handle nf-resize-v" />
-            <Panel id="nf-right" defaultSize="30%" minSize="18%" maxSize="58%">
-              <div className="nf-panel-fill">
-                <aside className="nf-right-pane">
-                  <SelectedNodePanel
-                    node={selectedNode}
-                    spec={selectedNode ? specById[selectedNode.data.type] : undefined}
-                    edges={edges}
-                    nodeOutputs={nodeOutputs}
-                    draftParams={draftParams ?? {}}
-                    draftCode={draftCode}
-                    onDraftParams={setDraftParams}
-                    onDraftCode={setDraftCode}
-                    onApply={handleApplyDraft}
-                    onRun={handleRunSelectedNode}
-                    onReset={selectedId ? () => resetNodeById(selectedId) : undefined}
-                    onDelete={handleDeleteSelectedNode}
-                    running={runBusy}
-                  />
-                </aside>
-              </div>
-            </Panel>
+            {rightOpen ? (
+              <>
+                <Separator className="nf-resize-handle nf-resize-v" />
+                <Panel id="nf-right" defaultSize="30%" minSize="18%" maxSize="58%">
+                  <div className="nf-panel-fill" style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      className="nf-collapse-strip-right"
+                      title="Collapse panel"
+                      aria-label="Collapse right panel"
+                      onClick={() => setRightOpen(false)}
+                    >
+                      ▶
+                    </button>
+                    <aside className="nf-right-pane">
+                      <SelectedNodePanel
+                        node={selectedNode}
+                        spec={selectedNode ? specById[selectedNode.data.type] : undefined}
+                        edges={edges}
+                        nodeOutputs={nodeOutputs}
+                        draftParams={draftParams ?? {}}
+                        draftCode={draftCode}
+                        onDraftParams={setDraftParams}
+                        onDraftCode={setDraftCode}
+                        onApply={handleApplyDraft}
+                        onRun={handleRunSelectedNode}
+                        onReset={selectedId ? () => resetNodeById(selectedId) : undefined}
+                        onDelete={handleDeleteSelectedNode}
+                        running={runBusy}
+                      />
+                    </aside>
+                  </div>
+                </Panel>
+              </>
+            ) : null}
           </Group>
           </div>
+          {!rightOpen ? (
+            <button
+              type="button"
+              className="nf-edge-strip-right"
+              title="Expand node panel"
+              aria-label="Expand right panel"
+              onClick={() => setRightOpen(true)}
+            >
+              ◀
+            </button>
+          ) : null}
           </div>
         </Panel>
-        <Separator className="nf-resize-handle nf-resize-h" />
-        <Panel id="nf-console" defaultSize="28%" minSize="12%" maxSize="55%">
-          <div className="nf-panel-fill">
-            <OutputPreview
-              title="Console"
-              nodeId={selectedId ?? undefined}
-              nodeLabel={selectedNode?.data.label}
-              output={bottomOutput}
-              errorMessage={bottomError}
-              logs={lastRunLogs.length ? lastRunLogs : undefined}
-            />
-            {composeResult ? <PlanReviewPanel composeResult={composeResult} /> : null}
-          </div>
-        </Panel>
+        {bottomOpen ? (
+          <>
+            <Separator className="nf-resize-handle nf-resize-h" />
+            <Panel id="nf-console" defaultSize="28%" minSize="12%" maxSize="55%">
+              <div className="nf-panel-fill" style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className="nf-collapse-strip-bottom"
+                  title="Collapse console"
+                  aria-label="Collapse bottom panel"
+                  onClick={() => setBottomOpen(false)}
+                >
+                  ▼
+                </button>
+                <OutputPreview
+                  title="Console"
+                  nodeId={selectedId ?? undefined}
+                  nodeLabel={selectedNode?.data.label}
+                  output={bottomOutput}
+                  errorMessage={bottomError}
+                  logs={lastRunLogs.length ? lastRunLogs : undefined}
+                />
+                {composeResult ? <PlanReviewPanel composeResult={composeResult} /> : null}
+              </div>
+            </Panel>
+          </>
+        ) : null}
       </Group>
+      {!bottomOpen ? (
+        <button
+          type="button"
+          className="nf-edge-strip-bottom"
+          title="Expand console"
+          aria-label="Expand bottom panel"
+          onClick={() => setBottomOpen(true)}
+        >
+          ▲ Console
+        </button>
+      ) : null}
 
       <NodeNotebookModal
         open={modalNodeId !== null}
@@ -1064,6 +1147,16 @@ export default function App() {
         getContent={() => JSON.stringify(buildSavedWorkflow(), null, 2)}
         onDownload={downloadWorkflow}
         onClose={() => setSaveModalOpen(false)}
+      />
+
+      <SaveWorkflowModal
+        open={exportModalOpen}
+        title="Export Notebook (.ipynb)"
+        defaultName="workflow.ipynb"
+        ext=".ipynb"
+        getContent={notebookContent}
+        onDownload={downloadNotebook}
+        onClose={() => setExportModalOpen(false)}
       />
     </div>
   );

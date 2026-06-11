@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  pickFolderNative,
   workspaceCreateFile,
   workspaceDelete,
   workspaceList,
@@ -161,7 +162,16 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
         </button>
         <button type="button" className="nf-btn nf-btn-sm" disabled={busy}
           title="Browse for a folder — it becomes the workspace root"
-          onClick={() => setPickerOpen(true)}>
+          onClick={() => {
+            void (async () => {
+              try {
+                const res = await pickFolderNative(listing?.path ?? null);
+                if (res.path) void load(res.path);
+              } catch {
+                setPickerOpen(true); // no GUI on backend host → in-app browser
+              }
+            })();
+          }}>
           Browse…
         </button>
       </div>

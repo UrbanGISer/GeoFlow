@@ -894,10 +894,10 @@ body,
 
 .nf-side-rail {
   flex-shrink: 0;
-  width: 44px;
+  width: 48px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 8px 4px;
   background: #f0f0f0;
   border-right: 1px solid #ddd;
@@ -905,13 +905,12 @@ body,
 
 .nf-rail-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  width: 36px;
-  padding: 6px 0 4px;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: #555;
   cursor: pointer;
@@ -928,14 +927,8 @@ body,
 }
 
 .nf-rail-icon {
-  font-size: 15px;
+  font-size: 23px;
   line-height: 1;
-}
-
-.nf-rail-label {
-  font-size: 7.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .nf-left-panel {
@@ -987,6 +980,91 @@ body,
 .nf-collapse-strip:hover {
   background: #1976d2;
   border-color: #1976d2;
+  color: #fff;
+}
+
+/* Right panel: ▶ on its left divider folds it; thin edge strip re-expands. */
+.nf-collapse-strip-right {
+  position: absolute;
+  left: -1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 56px;
+  border: 1px solid #ccc;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background: #f0f0f0;
+  color: #777;
+  font-size: 9px;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+
+.nf-collapse-strip-right:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: #fff;
+}
+
+.nf-edge-strip-right {
+  flex-shrink: 0;
+  width: 16px;
+  border: none;
+  border-left: 1px solid #ddd;
+  background: #f0f0f0;
+  color: #777;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nf-edge-strip-right:hover {
+  background: #1976d2;
+  color: #fff;
+}
+
+/* Bottom panel: ▼ on its top edge folds it; bottom strip re-expands. */
+.nf-collapse-strip-bottom {
+  position: absolute;
+  top: -1px;
+  right: 14px;
+  width: 56px;
+  height: 14px;
+  border: 1px solid #ccc;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  background: #f0f0f0;
+  color: #777;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+
+.nf-collapse-strip-bottom:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: #fff;
+}
+
+.nf-edge-strip-bottom {
+  flex-shrink: 0;
+  height: 18px;
+  width: 100%;
+  border: none;
+  border-top: 1px solid #ddd;
+  background: #f0f0f0;
+  color: #777;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nf-edge-strip-bottom:hover {
+  background: #1976d2;
   color: #fff;
 }
 

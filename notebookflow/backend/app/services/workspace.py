@@ -118,6 +118,50 @@ def read_file(path: str) -> dict[str, str]:
     return {"path": str(target), "content": target.read_text(encoding="utf-8", errors="replace")}
 
 
+_PICKER_SCRIPT = """\
+import sys
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+try:
+    root.attributes('-topmost', True)
+except Exception:
+    pass
+kwargs = {}
+if len(sys.argv) > 1 and sys.argv[1]:
+    kwargs['initialdir'] = sys.argv[1]
+path = filedialog.askdirectory(title='Choose folder', **kwargs)
+root.destroy()
+sys.stdout.write(path or '')
+"""
+
+
+def pick_folder_native(initial: str | None = None) -> dict[str, str]:
+    """Open the OS folder dialog on the local machine (backend == local).
+
+    Runs tkinter in a fresh subprocess so the dialog owns its own main
+    thread (required on macOS). Returns {"path": ""} when cancelled.
+    Raises RuntimeError when no GUI is available — callers fall back to
+    the in-app folder browser.
+    """
+    import subprocess
+    import sys
+
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _PICKER_SCRIPT, initial or ""],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Native folder dialog unavailable: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(f"Native folder dialog failed: {proc.stderr.strip()[:300]}")
+    return {"path": proc.stdout.strip()}
+
+
 def delete_path(path: str) -> dict[str, str]:
     if not path:
         raise ValueError("Path is required.")

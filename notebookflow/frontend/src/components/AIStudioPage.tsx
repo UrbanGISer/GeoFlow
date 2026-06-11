@@ -2,7 +2,6 @@ import { useState } from "react";
 import { composeWorkflow, generateNode, planWorkflow } from "../api/client";
 import type { AIConfig, ComposeWorkflowResponse, NotebookStandardizeResponse } from "../types";
 import { loadAIConfig } from "../types";
-import { AISettingsPanel } from "./AISettingsPanel";
 import { NotebookImportModal } from "./NotebookImportModal";
 
 type AITab = "builder" | "creator" | "notebook";
@@ -214,11 +213,8 @@ function NotebookToFlowTab({ onApply }: { onApply: (res: NotebookStandardizeResp
 
 export function AIStudioPage({ onClose, onComposed, onNotebookApply, onNodeSpecCreated }: AIStudioPageProps) {
   const [activeTab, setActiveTab] = useState<AITab>("builder");
-  const [config, setConfig] = useState<AIConfig>(() => loadAIConfig());
-
-  const handleConfigChange = (c: AIConfig) => {
-    setConfig(c);
-  };
+  // Provider settings live in the main window's ✦ AI rail tab (shared config).
+  const [config] = useState<AIConfig>(() => loadAIConfig());
 
   const tabs: Array<{ id: AITab; label: string }> = [
     { id: "builder", label: "AI Workflow Builder" },
@@ -232,14 +228,15 @@ export function AIStudioPage({ onClose, onComposed, onNotebookApply, onNodeSpecC
         <div className="nf-ai-studio-header">
           <div>
             <h1 className="nf-ai-studio-title">AI Studio</h1>
-            <p className="nf-ai-studio-subtitle">Build workflows, generate nodes, and import notebooks with AI assistance</p>
+            <p className="nf-ai-studio-subtitle">
+              Build workflows, generate nodes, and import notebooks with AI assistance.
+              Provider settings (API key, model) live in the main window’s ✦ AI tab.
+            </p>
           </div>
           <button type="button" className="nf-btn" onClick={onClose}>
             ← Back to Canvas
           </button>
         </div>
-
-        <AISettingsPanel config={config} onChange={handleConfigChange} />
 
         <div className="nf-ai-studio-tools">
           <div className="nf-tab-bar">

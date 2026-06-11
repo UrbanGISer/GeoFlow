@@ -40,6 +40,7 @@ from app.services import workspace as ws
 from app.services.cwl_exporter import export_cwl
 from app.services.gis_ingest import ingest_articles_to_specs
 from app.services.node_generator import generate_code, generate_node
+from app.services.notebook_exporter import export_ipynb
 from app.services.notebook_standardizer import standardize_notebook
 from app.services.planner import plan_workflow
 from app.services.workflow_composer import compose_workflow
@@ -342,6 +343,24 @@ def workspace_save_file(payload: dict) -> dict:
 def workspace_read(path: str) -> dict:
     """Read a text file back (e.g. open a saved workflow from the Workspace tab)."""
     return _ws_call(ws.read_file, path)
+
+
+@app.post("/api/workspace/pick-folder")
+def workspace_pick_folder(payload: dict) -> dict:
+    """Open the native OS folder dialog (backend runs locally). 501 → no GUI."""
+    try:
+        return ws.pick_folder_native(payload.get("initial"))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@app.post("/api/workflow/export/ipynb")
+def export_ipynb_endpoint(payload: CWLExportRequest) -> dict:
+    """Convert the workflow into an equivalent runnable Jupyter notebook."""
+    try:
+        return export_ipynb(payload.nodes, payload.edges)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/workspace/delete")

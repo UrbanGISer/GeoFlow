@@ -293,6 +293,28 @@ export async function workspaceRead(path: string): Promise<{ path: string; conte
   return parseJsonWithHttpError<{ path: string; content: string }>(res, "Read file");
 }
 
+/** Open the native OS folder dialog (backend runs locally). Throws when no GUI. */
+export async function pickFolderNative(initial?: string | null): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/pick-folder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ initial: initial ?? null }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Folder dialog");
+}
+
+export async function exportIpynb(payload: {
+  nodes: WorkflowNodePayload[];
+  edges: WorkflowEdgePayload[];
+}): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_PREFIX}/workflow/export/ipynb`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJsonWithHttpError<Record<string, unknown>>(res, "Notebook export");
+}
+
 export function artifactUrl(path: string): string {
   if (path.startsWith("http")) return path;
   const rel = path.startsWith("/") ? path : `/${path}`;

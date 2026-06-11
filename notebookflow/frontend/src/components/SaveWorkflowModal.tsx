@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
-import { workspaceSaveFile } from "../api/client";
+import { pickFolderNative, workspaceSaveFile } from "../api/client";
 import { loadWorkspaceRoot } from "../types";
 import { FolderPickerModal } from "./FolderPickerModal";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspacePanel";
 
 interface SaveWorkflowModalProps {
   open: boolean;
-  /** Serialized workflow JSON to write. */
-  getContent: () => string;
-  onDownload: () => void;
+  title?: string;
+  defaultName?: string;
+  /** Enforced file extension, e.g. ".json" / ".ipynb". */
+  ext?: string;
+  /** Serialized content to write (may be async, e.g. backend conversion). */
+  getContent: () => string | Promise<string>;
+  onDownload: () => void | Promise<void>;
   onClose: () => void;
 }
 
-export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: SaveWorkflowModalProps) {
+export function SaveWorkflowModal({
+  open,
+  title = "Save Workflow",
+  defaultName = "workflow.json",
+  ext = ".json",
+  getContent,
+  onDownload,
+  onClose,
+}: SaveWorkflowModalProps) {
   const [folder, setFolder] = useState("");
-  const [name, setName] = useState("workflow.json");
+  const [name, setName] = useState(defaultName);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -22,11 +34,22 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
   useEffect(() => {
     if (open) {
       setFolder(loadWorkspaceRoot() ?? "");
+      setName(defaultName);
       setMsg(null);
     }
-  }, [open]);
+  }, [open, defaultName]);
 
   if (!open) return null;
+
+  const handleBrowse = async () => {
+    try {
+      const res = await pickFolderNative(folder.trim() || loadWorkspaceRoot());
+      if (res.path) setFolder(res.path);
+    } catch {
+      // No GUI available on the backend host — fall back to the in-app browser.
+      setPickerOpen(true);
+    }
+  };
 
   const handleSave = async () => {
     const fname = name.trim();
@@ -37,8 +60,9 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
     setBusy(true);
     setMsg(null);
     try {
-      const finalName = fname.endsWith(".json") ? fname : `${fname}.json`;
-      const res = await workspaceSaveFile(folder.trim() || null, finalName, getContent());
+      const finalName = fname.endsWith(ext) ? fname : `${fname}${ext}`;
+      const content = await getContent();
+      const res = await workspaceSaveFile(folder.trim() || null, finalName, content);
       setMsg({ text: `Saved to ${res.path}`, error: false });
       window.dispatchEvent(new CustomEvent(WORKSPACE_REFRESH_EVENT));
     } catch (e) {
@@ -53,7 +77,7 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
       <button type="button" className="nf-modal-backdrop" onClick={onClose} aria-label="Close" />
       <div className="nf-modal nf-save-modal" style={{ zIndex: 3 }}>
         <div className="nf-modal-header">
-          <h2 style={{ margin: 0, fontSize: 16 }}>Save Workflow</h2>
+          <h2 style={{ margin: 0, fontSize: 16 }}>{title}</h2>
           <button type="button" className="nf-btn" onClick={onClose}>
             Close
           </button>
@@ -72,7 +96,7 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
                 type="button"
                 className="nf-btn nf-btn-sm"
                 disabled={busy}
-                onClick={() => setPickerOpen(true)}
+                onClick={() => void handleBrowse()}
               >
                 Browse…
               </button>
@@ -86,7 +110,7 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="nf-modal-actions-row">
-            <button type="button" className="nf-btn" onClick={onDownload} disabled={busy}>
+            <button type="button" className="nf-btn" onClick={() => void onDownload()} disabled={busy}>
               Download instead
             </button>
             <button

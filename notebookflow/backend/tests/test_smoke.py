@@ -233,6 +233,48 @@ def test_multi_input_ports() -> None:
     print("ok: multi-input ports (df_in_2/df_in_3, df_ins, per-port cache invalidation)")
 
 
+def test_ipynb_export_equivalence() -> None:
+    """Exported notebook, executed top-to-bottom, reproduces the engine result."""
+    from app.services.notebook_exporter import export_ipynb
+
+    nodes = [
+        WorkflowNode(id="L", type="x", label="Left Table",
+                     code="import pandas as pd\ndf_out = pd.DataFrame({'k': [1, 2, 3], 'a': [10, 20, 30]})"),
+        WorkflowNode(id="R", type="x", label="Right Table",
+                     code="import pandas as pd\ndf_out = pd.DataFrame({'k': [1, 2], 'b': ['x', 'y']})"),
+        WorkflowNode(id="J", type="x", label="Join",
+                     code="df_out = df_in.merge(df_in_2, on='k', how='inner')"),
+        WorkflowNode(id="V", type="x", label="View",
+                     code="html_out = '<b>rows: ' + str(len(df_in)) + '</b>'"),
+    ]
+    edges = [
+        WorkflowEdge(id="e1", source="L", target="J", targetHandle="df_in"),
+        WorkflowEdge(id="e2", source="R", target="J", targetHandle="df_in_2"),
+        WorkflowEdge(id="e3", source="J", target="V", targetHandle="df_in"),
+    ]
+    store = DataStore()
+    status, *_ = run_workflow(nodes, edges, store, Path(tempfile.mkdtemp()))
+    assert status == "success"
+    engine_df = store.get_df_for_node("J")
+
+    nb = export_ipynb(nodes, edges)
+    code_cells = [c["source"] for c in nb["cells"] if c["cell_type"] == "code"]
+    assert code_cells[0].count("import pandas") == 1  # imports hoisted + deduped
+
+    ns: dict = {}
+    for src in code_cells:
+        src = src.replace(
+            "from IPython.display import HTML, display",
+            "display = lambda *a: None; HTML = lambda x: x",
+        )
+        exec(compile(src, "<cell>", "exec"), ns)  # noqa: S102 - test executes its own export
+    nb_join = next(v for k, v in ns.items() if k.startswith("df_join"))
+    assert engine_df is not None
+    assert engine_df.reset_index(drop=True).equals(nb_join.reset_index(drop=True))
+    assert ns["html_out"] == "<b>rows: 2</b>"
+    print("ok: exported ipynb is equivalent (topo order, dedup imports, html view)")
+
+
 if __name__ == "__main__":
     test_engine_cache()
     test_cache_mutation_safety()
@@ -242,4 +284,5 @@ if __name__ == "__main__":
     test_notebook_standardizer_dataflow()
     test_notebook_read_csv_param_extraction()
     test_multi_input_ports()
+    test_ipynb_export_equivalence()
     print("\nAll smoke tests passed.")
