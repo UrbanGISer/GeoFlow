@@ -1,0 +1,106 @@
+{
+  "nodes": [
+    {
+      "id": "node_1778423316109_6h5lsjs",
+      "type": "read_csv",
+      "label": "Read CSV",
+      "category": "Input",
+      "position": {
+        "x": 100,
+        "y": 140
+      },
+      "params": {
+        "file_path": "../examples/case1_comparison_table.csv",
+        "delimiter": ",",
+        "encoding": "utf-8"
+      },
+      "code": "import pandas as pd\n\ndf_out = pd.read_csv(\n    params[\"file_path\"],\n    sep=params.get(\"delimiter\", \",\"),\n    encoding=params.get(\"encoding\", \"utf-8\")\n)\n"
+    },
+    {
+      "id": "node_1778423316888_pw95yjt",
+      "type": "column_filter",
+      "label": "Column Filter",
+      "category": "Transform",
+      "position": {
+        "x": 204.5,
+        "y": 140
+      },
+      "params": {
+        "columns": [
+          "Model",
+          "Beta",
+          "Min_est"
+        ]
+      },
+      "code": "columns = params.get(\"columns\", [])\n\nif not columns:\n    raise ValueError(\"Please select at least one column.\")\n\ndf_out = df_in[columns].copy()\n"
+    },
+    {
+      "id": "node_1778424471364_mxvjhjg",
+      "type": "histogram",
+      "label": "Histogram",
+      "category": "Visualization",
+      "position": {
+        "x": 326.74011755640777,
+        "y": 140
+      },
+      "params": {
+        "column": "Min_est",
+        "bins": 30
+      },
+      "code": "import plotly.express as px\n\ncolumn = params.get(\"column\")\nbins = int(params.get(\"bins\", 30))\n\nif column is None:\n    raise ValueError(\"Please select a column.\")\n\nfig = px.histogram(df_in, x=column, nbins=bins)\nhtml_out = fig.to_html(include_plotlyjs=\"cdn\")\n"
+    },
+    {
+      "id": "node_1778424570574_ctotloq",
+      "type": "geofile_reader",
+      "label": "GeoFile Reader",
+      "category": "Input",
+      "position": {
+        "x": 83.65254379449141,
+        "y": 237.50166308916587
+      },
+      "params": {
+        "file_path": "../examples/tl_2020_us_state-110M-continent.geojson",
+        "layer": ""
+      },
+      "code": "import os\nimport geopandas as gpd\n\nfile_path = params.get(\"file_path\")\n\nif not file_path:\n    raise ValueError(\"Please provide file_path.\")\n\nlayer = params.get(\"layer\")\n# Allow GDAL to rebuild missing .shx when possible.\nos.environ[\"SHAPE_RESTORE_SHX\"] = \"YES\"\nif layer:\n    df_out = gpd.read_file(file_path, layer=layer)\nelse:\n    df_out = gpd.read_file(file_path)\n"
+    },
+    {
+      "id": "node_1778441832378_v6a4fms",
+      "type": "geomap",
+      "label": "GeoMap",
+      "category": "Visualization",
+      "position": {
+        "x": 229.70107182594256,
+        "y": 312.3690115326325
+      },
+      "params": {
+        "tiles": "OpenStreetMap",
+        "zoom_start": 4
+      },
+      "code": "import folium\n\nif df_in is None:\n    raise ValueError(\"GeoMap requires df_in from upstream GeoFile Reader.\")\n\nif \"geometry\" not in df_in.columns:\n    raise ValueError(\"Input does not contain a geometry column.\")\n\ntiles = params.get(\"tiles\", \"OpenStreetMap\")\nzoom_start = int(params.get(\"zoom_start\", 4))\n\ngdf = df_in.copy()\ngdf = gdf[gdf.geometry.notnull()].copy()\n\nif gdf.empty:\n    raise ValueError(\"No valid geometries found.\")\n\ncentroid = gdf.geometry.to_crs(epsg=4326).centroid\ncenter_lat = float(centroid.y.mean())\ncenter_lon = float(centroid.x.mean())\n\nm = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_start, tiles=tiles)\nfolium.GeoJson(gdf.__geo_interface__).add_to(m)\nhtml_out = m.get_root().render()\n"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_node_1778423316109_6h5lsjs_node_1778423316888_pw95yjt_1778423319243",
+      "source": "node_1778423316109_6h5lsjs",
+      "target": "node_1778423316888_pw95yjt",
+      "sourceHandle": "df_out",
+      "targetHandle": "df_in"
+    },
+    {
+      "id": "edge_node_1778423316888_pw95yjt_node_1778424471364_mxvjhjg_1778424473239",
+      "source": "node_1778423316888_pw95yjt",
+      "target": "node_1778424471364_mxvjhjg",
+      "sourceHandle": "df_out",
+      "targetHandle": "df_in"
+    },
+    {
+      "id": "edge_node_1778424570574_ctotloq_node_1778441832378_v6a4fms_1778441834677",
+      "source": "node_1778424570574_ctotloq",
+      "target": "node_1778441832378_v6a4fms",
+      "sourceHandle": "df_out",
+      "targetHandle": "df_in"
+    }
+  ]
+}
