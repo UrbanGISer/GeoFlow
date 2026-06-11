@@ -28,6 +28,7 @@ interface SelectedNodePanelProps {
   onDraftCode: (code: string) => void;
   onApply: () => void;
   onRun: () => void;
+  onReset?: () => void;
   onDelete: () => void;
   running?: boolean;
 }
@@ -70,6 +71,7 @@ export function SelectedNodePanel({
   onDraftCode,
   onApply,
   onRun,
+  onReset,
   onDelete,
   running,
 }: SelectedNodePanelProps) {
@@ -110,6 +112,11 @@ export function SelectedNodePanel({
             <button type="button" className="nf-btn nf-btn-primary" onClick={onRun} disabled={running}>
               {running ? "Running…" : "Run"}
             </button>
+            {onReset ? (
+              <button type="button" className="nf-btn" onClick={onReset} disabled={running}>
+                Reset
+              </button>
+            ) : null}
             <button type="button" className="nf-btn nf-btn-danger" onClick={onDelete} disabled={running}>
               Delete
             </button>

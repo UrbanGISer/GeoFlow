@@ -1143,6 +1143,70 @@ body,
   border-radius: 0 4px 4px 0;
 }
 
+/* ── Edge selection ───────────────────────────────────────────────────────── */
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 2.5 !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: #1976d2 !important;
+  stroke-width: 3.5 !important;
+}
+
+/* ── Canvas context menu ──────────────────────────────────────────────────── */
+.nf-ctx-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 170px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #222;
+}
+
+.nf-ctx-item:hover:not(:disabled) {
+  background: #f0f4fa;
+}
+
+.nf-ctx-item:disabled {
+  color: #bbb;
+  cursor: default;
+}
+
+.nf-ctx-item-danger {
+  color: #b71c1c;
+}
+
+.nf-ctx-item-danger:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.nf-ctx-shortcut {
+  font-size: 11px;
+  color: #999;
+}
+
 /* ── Dynamic input ports (+/−) on nodes ───────────────────────────────────── */
 .nf-flow-port-controls {
   display: flex;

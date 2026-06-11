@@ -35,6 +35,9 @@ interface WorkflowCanvasInnerProps {
   onDropSpec?: (specId: string, position: { x: number; y: number }) => void;
   onAddInput?: (nodeId: string) => void;
   onRemoveInput?: (nodeId: string) => void;
+  onNodeMenu?: (pos: { x: number; y: number }, node: Node<FlowNodeData>) => void;
+  onEdgeMenu?: (pos: { x: number; y: number }, edge: Edge) => void;
+  onPaneMenu?: (pos: { x: number; y: number }, flowPos: { x: number; y: number }) => void;
 }
 
 function WorkflowCanvasInner({
@@ -49,6 +52,9 @@ function WorkflowCanvasInner({
   onDropSpec,
   onAddInput,
   onRemoveInput,
+  onNodeMenu,
+  onEdgeMenu,
+  onPaneMenu,
 }: WorkflowCanvasInnerProps) {
   const empty = nodes.length === 0;
   const { screenToFlowPosition } = useReactFlow();
@@ -99,7 +105,20 @@ function WorkflowCanvasInner({
           nodeTypes={nodeTypes}
           onNodeDoubleClick={onNodeDoubleClick}
           onNodeClick={onNodeClick}
-          deleteKeyCode="Delete"
+          onNodeContextMenu={(e, node) => {
+            e.preventDefault();
+            onNodeMenu?.({ x: e.clientX, y: e.clientY }, node);
+          }}
+          onEdgeContextMenu={(e, edge) => {
+            e.preventDefault();
+            onEdgeMenu?.({ x: e.clientX, y: e.clientY }, edge);
+          }}
+          onPaneContextMenu={(e) => {
+            e.preventDefault();
+            const pos = { x: e.clientX, y: e.clientY };
+            onPaneMenu?.(pos, screenToFlowPosition(pos));
+          }}
+          deleteKeyCode={["Delete", "Backspace"]}
           fitView
           defaultEdgeOptions={{ style: { stroke: "#222", strokeWidth: 1.5 } }}
           proOptions={{ hideAttribution: true }}

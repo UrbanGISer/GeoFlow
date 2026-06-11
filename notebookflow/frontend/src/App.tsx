@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import { fetchNodeSpecs, runSingleNode, runWorkflow } from "./api/client";
 import { AIStudioPage } from "./components/AIStudioPage";
+import { CanvasContextMenu, type ContextMenuItem } from "./components/CanvasContextMenu";
 import { LeftPanel } from "./components/LeftPanel";
 import { NodeCreatorModal } from "./components/NodeCreatorModal";
 import { NodeNotebookModal } from "./components/NodeNotebookModal";
@@ -78,6 +79,31 @@ interface SavedWorkflow {
   edges: WorkflowEdgePayload[];
 }
 
+interface ClipboardContent {
+  nodes: Array<{ id: string; position: { x: number; y: number }; data: FlowNodeData }>;
+  edges: Array<{
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }>;
+}
+
+interface CtxMenuState {
+  kind: "node" | "edge" | "pane";
+  x: number;
+  y: number;
+  targetId?: string;
+  flowPos?: { x: number; y: number };
+}
+
+function isEditableTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
 const CUSTOM_NODES_STORAGE_KEY = "notebookflow.customNodeSpecs.v1";
 
 export default function App() {
@@ -97,6 +123,9 @@ export default function App() {
   const [composeResult, setComposeResult] = useState<ComposeWorkflowResponse | null>(null);
   const [aiStudioOpen, setAiStudioOpen] = useState(false);
   const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+  const clipboardRef = useRef<ClipboardContent | null>(null);
+  const pasteCountRef = useRef(0);
 
   const specById = useMemo(() => {
     const m: Record<string, NodeSpec> = {};
@@ -250,6 +279,155 @@ export default function App() {
       );
     });
   }, []);
+
+  const deleteNodeById = useCallback((nodeId: string) => {
+    setNodes((ns) => ns.filter((n) => n.id !== nodeId));
+    setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setNodeOutputs((prev) => { const next = { ...prev }; delete next[nodeId]; return next; });
+    setSelectedId((sid) => (sid === nodeId ? null : sid));
+    setModalNodeId((mid) => (mid === nodeId ? null : mid));
+    setWorkflowError((we) => (we?.nodeId === nodeId ? null : we));
+  }, []);
+
+  const deleteEdgeById = useCallback((edgeId: string) => {
+    setEdges((es) => es.filter((e) => e.id !== edgeId));
+  }, []);
+
+  const resetNodeById = useCallback((nodeId: string) => {
+    setNodes((ns) =>
+      ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status: "idle" as const } } : n)),
+    );
+    setNodeOutputs((prev) => { const next = { ...prev }; delete next[nodeId]; return next; });
+    setWorkflowError((we) => (we?.nodeId === nodeId ? null : we));
+  }, []);
+
+  const copyNodes = useCallback(
+    (ids: string[]) => {
+      const idSet = new Set(ids);
+      const chosen = nodes.filter((n) => idSet.has(n.id));
+      if (!chosen.length) return;
+      clipboardRef.current = {
+        nodes: chosen.map((n) => ({
+          id: n.id,
+          position: { x: n.position.x, y: n.position.y },
+          data: structuredClone({ ...n.data, status: "idle" as const }),
+        })),
+        edges: edges
+          .filter((e) => idSet.has(e.source) && idSet.has(e.target))
+          .map((e) => ({
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          })),
+      };
+      pasteCountRef.current = 0;
+    },
+    [nodes, edges],
+  );
+
+  const pasteNodes = useCallback((at?: { x: number; y: number }) => {
+    const clip = clipboardRef.current;
+    if (!clip?.nodes.length) return;
+    pasteCountRef.current += 1;
+    const minX = Math.min(...clip.nodes.map((n) => n.position.x));
+    const minY = Math.min(...clip.nodes.map((n) => n.position.y));
+    const offset = at
+      ? { x: at.x - minX, y: at.y - minY }
+      : { x: 40 * pasteCountRef.current, y: 40 * pasteCountRef.current };
+    const idMap = new Map<string, string>();
+    const newNodes: Node<FlowNodeData>[] = clip.nodes.map((cn) => {
+      const nid = newNodeId();
+      idMap.set(cn.id, nid);
+      return {
+        id: nid,
+        type: "notebook",
+        position: { x: cn.position.x + offset.x, y: cn.position.y + offset.y },
+        selected: true,
+        data: structuredClone(cn.data),
+      };
+    });
+    const newEdges: Edge[] = clip.edges.map((ce, i) => ({
+      id: `edge_${idMap.get(ce.source)}_${idMap.get(ce.target)}_${Date.now()}_${i}`,
+      source: idMap.get(ce.source)!,
+      target: idMap.get(ce.target)!,
+      sourceHandle: ce.sourceHandle ?? "df_out",
+      targetHandle: ce.targetHandle ?? "df_in",
+    }));
+    setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), ...newNodes]);
+    setEdges((es) => [...es, ...newEdges]);
+  }, []);
+
+  const runNodeById = useCallback(
+    async (nodeId: string) => {
+      setRunBusy(true);
+      setWorkflowError(null);
+      setNodes((ns) =>
+        ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status: "running" as const } } : n)),
+      );
+      try {
+        const payload = buildPayload(nodes, edges);
+        const res = await runSingleNode({ nodes: payload.nodes, edges: payload.edges, node_id: nodeId });
+        setLastRunLogs(res.logs ?? []);
+        setNodeOutputs((prev) => ({ ...prev, ...(res.node_outputs ?? {}) }));
+        if (res.status === "error") {
+          setWorkflowError({ nodeId: res.node_id ?? nodeId, message: res.message ?? "Error" });
+          setNodes((ns) =>
+            ns.map((n) => ({
+              ...n,
+              data: {
+                ...n.data,
+                status:
+                  n.id === res.node_id
+                    ? ("error" as const)
+                    : n.id === nodeId
+                      ? ("idle" as const)
+                      : n.data.status,
+              },
+            })),
+          );
+        } else {
+          setNodes((ns) =>
+            ns.map((n) =>
+              n.id === nodeId ? { ...n, data: { ...n.data, status: "success" as const } } : n,
+            ),
+          );
+        }
+      } catch (e) {
+        setWorkflowError({ nodeId, message: e instanceof Error ? e.message : String(e) });
+        setNodes((ns) =>
+          ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status: "idle" as const } } : n)),
+        );
+      } finally {
+        setRunBusy(false);
+      }
+    },
+    [nodes, edges],
+  );
+
+  // Ctrl/Cmd+C copies selected nodes, Ctrl/Cmd+V pastes (skipped while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (isEditableTarget(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (k === "c") {
+        const ids = nodes.filter((n) => n.selected).map((n) => n.id);
+        if (!ids.length && selectedId) ids.push(selectedId);
+        if (ids.length) {
+          copyNodes(ids);
+          e.preventDefault();
+        }
+      } else if (k === "v") {
+        if (clipboardRef.current?.nodes.length) {
+          pasteNodes();
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nodes, selectedId, copyNodes, pasteNodes]);
 
   const handleRunWorkflow = async () => {
     setWorkflowError(null);
@@ -449,11 +627,8 @@ export default function App() {
 
   const handleDeleteSelectedNode = useCallback(() => {
     if (!selectedId) return;
-    setNodes((ns) => ns.filter((n) => n.id !== selectedId));
-    setEdges((es) => es.filter((e) => e.source !== selectedId && e.target !== selectedId));
-    setNodeOutputs((prev) => { const next = { ...prev }; delete next[selectedId]; return next; });
-    setSelectedId(null); setModalNodeId(null);
-  }, [selectedId]);
+    deleteNodeById(selectedId);
+  }, [selectedId, deleteNodeById]);
 
   const handleModalSave = (nodeId: string, data: FlowNodeData) => {
     setNodes((ns) =>
@@ -466,6 +641,39 @@ export default function App() {
       setDraftCode(data.code);
     }
   };
+
+  let ctxItems: ContextMenuItem[] = [];
+  if (ctxMenu?.kind === "node" && ctxMenu.targetId) {
+    const nid = ctxMenu.targetId;
+    ctxItems = [
+      { label: "Run", disabled: runBusy, onClick: () => void runNodeById(nid) },
+      {
+        label: "Copy",
+        shortcut: "⌘C",
+        onClick: () => {
+          const sel = nodes.filter((n) => n.selected).map((n) => n.id);
+          copyNodes(sel.includes(nid) ? sel : [nid]);
+        },
+      },
+      { label: "Reset", onClick: () => resetNodeById(nid) },
+      { label: "Delete", shortcut: "⌫", danger: true, onClick: () => deleteNodeById(nid) },
+    ];
+  } else if (ctxMenu?.kind === "edge" && ctxMenu.targetId) {
+    const eid = ctxMenu.targetId;
+    ctxItems = [
+      { label: "Delete connection", shortcut: "⌫", danger: true, onClick: () => deleteEdgeById(eid) },
+    ];
+  } else if (ctxMenu?.kind === "pane") {
+    const flowPos = ctxMenu.flowPos;
+    ctxItems = [
+      {
+        label: "Paste",
+        shortcut: "⌘V",
+        disabled: !clipboardRef.current?.nodes.length,
+        onClick: () => pasteNodes(flowPos),
+      },
+    ];
+  }
 
   return (
     <div className="nf-app">
@@ -494,11 +702,6 @@ export default function App() {
           >
             ✦ AI Studio
           </button>
-          {selectedId ? (
-            <button type="button" className="nf-btn nf-btn-danger" onClick={handleDeleteSelectedNode}>
-              Delete
-            </button>
-          ) : null}
           <input
             ref={fileInputRef}
             type="file"
@@ -536,6 +739,15 @@ export default function App() {
                   onDropSpec={handleDropSpec}
                   onAddInput={handleAddInputPort}
                   onRemoveInput={handleRemoveInputPort}
+                  onNodeMenu={(pos, node) =>
+                    setCtxMenu({ kind: "node", x: pos.x, y: pos.y, targetId: node.id })
+                  }
+                  onEdgeMenu={(pos, edge) =>
+                    setCtxMenu({ kind: "edge", x: pos.x, y: pos.y, targetId: edge.id })
+                  }
+                  onPaneMenu={(pos, flowPos) =>
+                    setCtxMenu({ kind: "pane", x: pos.x, y: pos.y, flowPos })
+                  }
                 />
               </div>
             </Panel>
@@ -554,6 +766,7 @@ export default function App() {
                     onDraftCode={setDraftCode}
                     onApply={handleApplyDraft}
                     onRun={handleRunSelectedNode}
+                    onReset={selectedId ? () => resetNodeById(selectedId) : undefined}
                     onDelete={handleDeleteSelectedNode}
                     running={runBusy}
                   />
@@ -622,6 +835,15 @@ export default function App() {
             mergeSpecs([spec]);
             setSelectedSpec(spec);
           }}
+        />
+      ) : null}
+
+      {ctxMenu ? (
+        <CanvasContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxItems}
+          onClose={() => setCtxMenu(null)}
         />
       ) : null}
     </div>
