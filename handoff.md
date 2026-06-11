@@ -1,155 +1,173 @@
-# Handoff — GeoFlow / NotebookFlow v0.3 改进会话
+# Handoff — GeoFlow / NotebookFlow
 
-> 日期:2026-06-10
-> 任务:基于现有架构修正并提升 AI workflow、自动建节点、以及执行速度。
-> 状态:**全部完成,7 项冒烟测试通过,已提交到 main(commit `3b81ab5`)**。
-> 测试入口:Windows 双击 `start.bat`(启动)/ `run_tests.bat`(测试);macOS 用 `./start.sh`。
+> 更新日期:2026-06-11
+> 当前版本:**v0.5.8**(HEAD `0b76723`,main 分支,推送由用户手动执行)
+> 测试入口:Windows 双击 `start.bat`(conda env `geoxai`)/ macOS `./start.sh`;
+> 后端测试 `run_tests.bat` 或 `cd notebookflow/backend && python tests/test_smoke.py`(9 项,全部通过)。
 
-## 一、问题诊断(本次会话的结论)
+GeoFlow 是 KNIME 式的本地优先可视化工作流平台(FastAPI 后端 + React/@xyflow 前端),
+每个节点是一个 Python cell,约定接收 `df_in`(或多端口 `df_in_2…`/`df_ins`)与 `params`,
+产出 `df_out` 和/或 `html_out`。AI 要素贯穿:提示词建流程、AI 建节点、节点内 AI 写代码、notebook 双向转换。
 
-### AI workflow 做得不好的根因
+---
 
-1. **LLM 看不到节点库**(`planner.py`):旧 planner 只让模型输出抽象步骤
-   (title/intent/io_type),再用 8 个硬编码关键词匹配节点 —— 选不准节点、填不了参数。
-2. **静默降级**(`planner.py`):模型返回 ```json 围栏包裹的回复时 `json.loads`
-   直接失败,悄悄退回规则启发式 —— **配了 API key 也基本一直在用最笨的方案**,
-   这是"AI 看起来不工作"的直接原因。
-3. **临时节点不是 AI 生成**(`temp_node_factory.py`):只有 4 个固定模板,
-   多数产出 `df_out = df_in.copy()` 占位代码。
-4. **Notebook 导入的节点跑不起来**(`notebook_standardizer.py`):原始 cell 代码引用
-   `df`/`gdf` 等原变量名,与节点的 `df_in/df_out` 约定不符,执行必然 NameError;
-   且边强制线性串联,丢失真实数据流/分支结构。
-5. **组合出的 workflow 参数全是默认值**(`workflow_composer.py`):`file_path=None`,
-   不手改 JSON 跑不起来。
+## 一、版本演进总览(v0.3 → v0.5.8)
 
-### 速度慢的根因
+### v0.3 — 引擎与 AI 质量(`3b81ab5`)
+- **增量执行引擎**:节点指纹 = sha256(类型+代码+参数+输入文件 mtime/size+全部上游指纹链);
+  命中 `ResultCache`(LRU)直接复用;`compile()` 按代码哈希缓存;pandas Copy-on-Write +
+  浅拷贝保证缓存不被节点原地修改污染。每节点输出 `cached`/`elapsed_ms`。
+- **目录感知 AI 规划**:节点库注入 LLM prompt,步骤返回 `node_id`+具体 `params`+兜底 `code`;
+  JSON 解析容忍 markdown 围栏(旧版静默降级的根因);组合优先级 planner → 检索器 → 临时节点。
+- **AST 数据流 notebook 导入**:真实数据流边(保留分支),变量名自动桥接,导入即可运行。
 
-- 引擎每次 Run 都 `store.clear()` 全图重算;单节点运行也重算全部上游;无任何缓存
-  (`workflow_engine.py`)。
-- 节点代码每次执行重新 `compile()`(`executors.py`)。
+### v0.4 — AI Studio 与节点库(`a323276`)
+- **33 内置节点**(现 34,含 geo_view):Input×5 / Transform×9 / GIS×8 / Visualization×5(Plotly+folium)/
+  Nature View×4(matplotlib+seaborn 出版级 PNG)/ Python Script×2。
+- **AI Studio 页**:三个 AI 工具标签(AI Workflow Builder / AI Node Creator / Notebook to Flow)。
+- `AIConfig`(base_url/api_key/model)从前端 localStorage 随请求下发,运行时覆盖环境变量;
+  预配 Google AI Studio Gemini。
+- 节点库按 category 动态分组 + 搜索 + 拖拽到画布(`screenToFlowPosition`)。
 
-## 二、已完成的修改
+### v0.5 — 多输入端口与 Workspace(`843b458`)
+- **多输入端口引擎**:按 `targetHandle`(df_in/df_in_2/…)收集入边,节点代码可用
+  `df_in_2`、`df_ins`;指纹覆盖每个端口。`join_tables`/`geo_spatial_join` 双端口
+  (右端口未连时回退 `right_file_path`)。
+- **动态输入节点**:GeoMap/GeoView 可加减端口,图层按端口序自下而上绘制(每层独立配色+图层开关)。
+- **GeoView 节点**:静态 PNG 多图层地图(choropleth/dpi/save_path 存盘)。
+- 全部节点带 markdown `description`(Info 面板渲染,自写零依赖 Markdown.tsx)。
+- Workspace 文件浏览 API(list/mkdir/create-file/delete)。
+- 表格预览列头灰字显示字段类型(integer/string/geometry…)。
 
-全部在 `notebookflow/backend/`,前端无需改动(API 字段为增量添加,向后兼容)。
+### v0.5.1–v0.5.3 — 画布交互(KNIME 化)
+- 连线:选中加粗变蓝,Delete/Backspace 删除,右键 "Delete connection"。
+- 节点:⌘C/⌘V 复制粘贴(带配置、端口数、内部连线),右键菜单 Run/Copy/Reset/Delete,
+  画布右键 Paste(落在鼠标处)/Add Text Box;Reset 恢复 idle 并清输出。
+- **KNIME 三角端口**:输出 ▶ 贴右侧、输入 ◀ 贴左侧(覆盖 React Flow 默认 translate ±50% 才贴边);
+  纯视图节点(仅 html_out)不显示输出端口;端口位于左侧 `(i+0.5)/(n+2)` 处;
+  端口数变化时 `updateNodeInternals` 重锚连线(**勿在挂载时调用**,会清空 handle bounds 导致连线消失)。
+- 点击输入端口弹 +/− 小浮窗(1 端口时只有 +),点外部关闭。
+- 库内单击=预览(Info),双击/回车/拖拽=添加;有选中节点时自动连线
+  (仅 df_out→df_in),落位 = 选中节点右侧 2.5×40px,占位则下移避让;粘贴 "Node N" 注释自动续号。
+- **节点注释**:名字在图标上方,下方 120px 可编辑多行注释(双击编辑,默认 "Node N",
+  存入 `annotation` 字段,**不参与指纹**)。
+- **画布文本框**(AnnotationNode):右键添加,可移动/缩放(NodeResizer),
+  选中出样式工具栏(填充/边框/字体色+字号),空文字即色带;不进入执行,存于 JSON `annotations`。
+- Manual Node 按钮与 NodeCreatorModal 已删除(AI Studio 取代)。
 
-### 1. 增量执行引擎(速度核心)
+### v0.5.4 — 布局与节点内 AI(`807f4d7`)
+- 右侧配置面板:代码三模式(**默认折叠**/内联/全屏 Expand——Monaco 需要具体高度,
+  100% 在自适应容器中会塌缩);Apply/Run/Reset/Delete 移到面板底部操作栏;
+  双击弹窗(Node Notebook)代码同样默认折叠。
+- **节点内 AI Coding**:Python Script (Data/HTML) 节点配置面板带 ✦ AI Coding 区,
+  自然语言→`POST /api/code/generate` 生成符合约定的 cell 代码(上游列名作上下文,禁用模式扫描)。
+- 画布**框选**:空白处左键拖拽圈选(部分覆盖即选中),整组拖动;平移=中键/滚轮
+  (panOnDrag 含右键会吞掉 onPaneContextMenu,故只用 `[1]`)。
 
-- `workflow_engine.py`:新增 `node_fingerprint()` —
-  sha256(节点类型 + 代码 + 参数 + 输入文件 mtime/size + 上游指纹链)。
-  指纹命中缓存 → 直接复用结果不执行;改某节点只重算它及其下游。
-- `data_store.py`:新增 `ResultCache`(LRU,默认 32 条,单 DataFrame ≤256MB 才缓存)。
-- `executors.py`:`compile()` 结果按代码哈希缓存;全局开启 pandas Copy-on-Write。
-- 变异安全:向节点代码传 `df.copy(deep=False)`(CoW 下零成本),
-  下游原地修改 `df_in` 不会污染缓存 —— 有专门测试。
-- 可观测:每节点输出 `cached` / `elapsed_ms`;日志含
-  `Workflow finished in X ms (N executed, M from cache)`。
-- API:run 请求支持 `use_cache: bool`(默认 true);新增 `POST /api/cache/clear`。
+### v0.5.5–v0.5.8 — Workspace/导出/外壳(最新)
+- **左侧图标栏**(KNIME 式):44px 竖排 5 图标 ▦ⓘ📁✦≣(Logs 字形小,单独 34px),
+  默认折叠,点击展开,分割线 ◀ 收回;右栏 ▶ / 下栏 ▼(居中)同样可折叠,
+  折叠后边缘细条(◀/▲ Console)展开,画布可最大化。
+- **Workspace**:浏览到的文件夹即 root(自动持久化,无需 pin);
+  Browse… 弹**系统原生对话框**(macOS osascript `choose folder`,Windows PowerShell
+  FolderBrowserDialog 置顶无控制台,Linux zenity→tkinter;失败 501 → 应用内 FolderPickerModal);
+  点击 .json 直接作为工作流打开(画布非空先确认)。
+- **Save**:对话框(目标文件夹默认 workspace + Browse + 文件名,自动补 .json,可改下载),
+  写入 `POST /api/workspace/save-file`。
+- **Export → ipynb**(Load 旁):`notebook_exporter.py` 把工作流转成**等价完整 notebook**——
+  拓扑序每节点 markdown+code 两个 cell;import 提升去重;`df_in/df_ins` 从上游
+  `df_<node>` 变量桥接、结果再发布;html_out 经 IPython.display 内联渲染;
+  **params 用 Python 字面量**(json 的 null 会 NameError,已修)。
+  冒烟测试真实执行导出的 notebook 并断言与引擎结果相等。
+- 下栏只显示运行结果(Console+节点名,无 tab),Logs 移入侧栏 ≣;
+  显示区加倍(下栏默认 42%,iframe 400px,表格 300px)。
+- AI Studio 不再内嵌 provider 设置(主界面 ✦ AI 标签全局共用);
+  Gemini 模型下拉按 3.5/3.1/2.5 分组并带价目提示。
+- `backend/workspace/` 已 gitignore(用户数据)。
 
-### 2. 目录感知 AI 规划(质量核心)
+---
 
-- `planner.py` 重写:节点目录(id/IO 契约/参数/枚举)注入 prompt;每步返回
-  `node_id` + 具体 `params` + 兜底 `code`;`extract_json_object()` 容忍 markdown
-  围栏与闲聊文本;`AI_TIMEOUT_SECONDS` 可配(默认 60)。
-- `workflow_composer.py`:优先用 planner 选的 `node_id` 与参数(按 spec 白名单合并);
-  其次走检索器;最后才落临时节点。
-- `temp_node_factory.py`:优先使用 planner 生成的代码,经 `scan_generated_code()`
-  安全扫描(禁 subprocess / os.system / eval / exec / socket / pickle.loads 等),
-  模板仅兜底。
-- `node_retriever.py` 重写:概念映射(read/geo/map/hist/group/filter/join/buffer
-  + 同义词 + 复合词子串 + 单复数归一)+ IO 契约加权。
-  **不配 LLM 时**,"load csv → filter → groupby → histogram" 也能 4 步全部映射到正确节点(已验证)。
-- `models.py`:`PlanStep` 增加 `node_id/params/code`;新增 `RunWorkflowRequest`;
-  `SingleNodeRunRequest` 增加 `use_cache`。
+## 二、验证方式
 
-### 3. AST 数据流 notebook 导入(导入即可运行)
+**一键启动**:Windows 双击 `start.bat`(默认 conda env `geoxai`,可用
+`NOTEBOOKFLOW_CONDA_ENV` 覆盖;存在 `ai.env.bat` 自动加载 AI 配置);macOS `./start.sh`。
+浏览器访问 **http://localhost:5173**(8000 是 API)。
 
-- `notebook_standardizer.py` 重写:AST 提取每 cell 的自由变量(外部依赖)与赋值变量(产出);
-  **边按真实数据流连接**(保留分支);自动桥接变量名
-  (`df = df_in` 前缀、`df_out = df2` 后缀);纯 import cell 合并进下一 cell;
-  `%magic`/`!shell` 行剥离为注释;builtin 映射仅在能恢复关键参数时发生
-  (如 `read_csv('path')` 提取 file_path),避免产出参数为空的假标准节点。
-
-### 4. 测试与文档
-
-- `backend/tests/test_smoke.py`(新,纯 python 可跑,无需 pytest/fastapi):
-  缓存命中/失效、`use_cache=false`、变异安全、JSON 提取、检索器 6 类步骤全对、
-  代码安全扫描、notebook 分支 DAG 端到端执行、read_csv 参数提取端到端执行。
-  **当前全部通过。**
-- `docs/next-gen-architecture.md`(新):完整诊断 + 三阶段演进蓝图。
-- `notebookflow/README.md`:v0.3 highlights、缓存 API、测试说明、`AI_TIMEOUT_SECONDS`。
-
-### 5. 一键启动脚本(仓库根目录)
-
-- `start.bat`(Windows,双击即可):首次运行自动建 venv、装后端依赖、`npm install`,
-  开两个窗口分别跑后端(8000)和前端(5173),并自动打开浏览器。
-  启动时若存在 `ai.env.bat` 会自动加载(写 `set AI_API_BASE_URL=...` 等三行即可启用 AI;
-  没有该文件也能跑,AI 走规则降级)。
-- `run_tests.bat`(Windows):跑 7 项后端冒烟测试。
-- `start.sh`(macOS/Linux):同 start.bat,AI 配置读同目录 `ai.env`(`export` 形式)。
-- bat 文件为 CRLF 行尾,`.gitattributes` 已固定 `*.bat text eol=crlf`,
-  Windows 上 clone/pull 不会被 git 改坏行尾。
-
-## 三、验证方式
-
-**Windows(推荐)**:双击仓库根目录 `start.bat`,浏览器自动打开 http://localhost:5173;
-双击 `run_tests.bat` 跑冒烟测试。前置条件:PATH 里有 Python 3.10+ 和 Node.js。
-
-**手动方式**:
-
+**后端冒烟测试**(9 项,无需 pytest):
 ```bash
-# 后端逻辑测试(只需 pandas + pydantic)
 cd notebookflow/backend && python tests/test_smoke.py
-
-# 实际体验(需安装 requirements.txt)
-uvicorn app.main:app --reload --port 8000   # backend
-cd notebookflow/frontend && npm run dev      # frontend
 ```
+覆盖:缓存命中/失效/变异安全、planner JSON 提取、检索器选型、代码安全扫描、
+notebook 导入分支 DAG 端到端、read_csv 参数提取、**多输入端口(df_in_2/df_ins/按端口缓存失效)**、
+**ipynb 导出等价性(导出后顺序执行=引擎结果)**。
 
-**缓存效果验证**:搭一个简单 workflow 连续 Run 两次,第二次日志显示
-`cached (reused previous result)` 与 `Workflow finished in X ms (0 executed, N from cache)`。
+**前端**:`cd notebookflow/frontend && npx tsc --noEmit`(0 错误)+ `npx vite build`。
+本仓库 `.claude/launch.json` 配好了 Claude Preview 前端入口,可做浏览器内验证。
 
-## 四、下一步(按收益排序)
+---
 
-1. **AI 自修复闭环**(收益最大):compose 后自动 dry-run,把报错节点 + traceback
-   回传 LLM 修复(最多 N 轮)。
-2. **流式进度**:run 端点改 SSE/WebSocket,节点逐个变绿。
-3. **磁盘缓存**:ResultCache 落 Parquet/GeoParquet,重启进程缓存仍有效。
-4. **节点 SDK**(生态上限):装饰器定义节点自动生成 spec + entry_points 插件机制。
-5. **数据感知规划**:上传文件后把 schema(列名/类型/CRS)写入 `data_context`,
-   LLM 直接填正确列名 —— 后端已支持,只差前端传入。
-6. `gis_ingest.py` 仍是占位代码生成,需按蓝图升级为
-   "LLM 生成完整 spec → 安全扫描 → 沙箱试跑 → 入库"。
-7. 已知局限:引擎仍是单 `df_in` 端口(join/overlay 双输入需要类型化端口系统,
-   见架构文档阶段 A1);多用户并发共享一个全局 store/cache(本地单用户场景可接受)。
+## 三、关键文件索引
 
-## 五、关键文件索引
-
+### 后端 `notebookflow/backend/app/`
 | 文件 | 内容 |
 |------|------|
-| `notebookflow/backend/app/workflow_engine.py` | 指纹 + 增量执行 + 计时 |
-| `notebookflow/backend/app/data_store.py` | ResultCache (LRU) |
-| `notebookflow/backend/app/executors.py` | 编译缓存 + CoW |
-| `notebookflow/backend/app/services/planner.py` | 目录感知 LLM 规划 + 健壮 JSON 解析 |
-| `notebookflow/backend/app/services/workflow_composer.py` | library-first 组合 |
-| `notebookflow/backend/app/services/node_retriever.py` | 概念映射检索 |
-| `notebookflow/backend/app/services/temp_node_factory.py` | AI 代码 + 安全扫描 |
-| `notebookflow/backend/app/services/notebook_standardizer.py` | AST 数据流导入 |
-| `notebookflow/backend/tests/test_smoke.py` | 7 项冒烟测试 |
-| `docs/next-gen-architecture.md` | 诊断 + 演进蓝图 |
-| `start.bat` / `run_tests.bat` / `start.sh` | 一键启动与测试脚本(根目录) |
+| `workflow_engine.py` | 拓扑执行 + 多端口收集 + 指纹增量 + dtypes 摘要 |
+| `data_store.py` / `executors.py` | ResultCache(LRU)/ 编译缓存 + CoW + 多输入命名空间 |
+| `node_specs.py` | 34 内置节点(代码+spec+markdown 描述) |
+| `models.py` | AIConfig、NodeSpec(description/dynamic_inputs/cwl_hints)、annotation 等 |
+| `services/planner.py` | 目录感知 LLM 规划(ai_config 覆盖) |
+| `services/workflow_composer.py` / `node_retriever.py` / `temp_node_factory.py` | library-first 组合链 |
+| `services/notebook_standardizer.py` | ipynb → 工作流(AST 数据流) |
+| `services/notebook_exporter.py` | 工作流 → ipynb(等价转换) |
+| `services/node_generator.py` | AI 整节点生成 + 节点内 AI Coding(`generate_code`) |
+| `services/workspace.py` | 文件浏览/读写/删除 + 原生文件夹对话框(分平台) |
+| `services/cwl_exporter.py` | CWL v1.2 导出桩(接口预留) |
+| `tests/test_smoke.py` | 9 项冒烟测试 |
 
-## 六、节点库界面空白问题(已解决, commit `beda28d` / `928ccab`)
+### 前端 `notebookflow/frontend/src/`
+| 文件 | 内容 |
+|------|------|
+| `App.tsx` | 全局状态/布局(三栏折叠)/复制粘贴/右键菜单/保存导出 |
+| `components/LeftPanel.tsx` | SideRail 图标栏 + Nodes/Info/Workspace/AI/Logs 面板 |
+| `components/FlowNode.tsx` | 三角端口、动态端口浮窗、上名下注释布局 |
+| `components/AnnotationNode.tsx` | 画布文本框(NodeResizer+样式工具栏) |
+| `components/WorkflowCanvas.tsx` | 拖放、框选、右键菜单转发、portActions context |
+| `components/SelectedNodePanel.tsx` | 参数/AI Coding/代码三模式/底部操作栏 |
+| `components/OutputPreview.tsx` | 结果区(表格 dtype 列头/HTML iframe/Expand) |
+| `components/WorkspacePanel.tsx` / `FolderPickerModal.tsx` / `SaveWorkflowModal.tsx` | Workspace 浏览/选择/保存导出对话框 |
+| `components/AIStudioPage.tsx` / `AISettingsPanel.tsx` | AI 工具页 / 共享 provider 设置 |
+| `components/CanvasContextMenu.tsx` / `Markdown.tsx` / `portActions.ts` | 右键菜单 / md 渲染 / 节点级动作 context |
 
-**现象**:左侧 Node Library 只有 "Nodes" 标题,Tabular / GeoData 下列表为空;`node_specs.py` 里 7 个内置节点(read_csv、column_filter、row_filter、groupby、histogram、geofile_reader、geomap)在代码中始终存在,并非被 Git 更新或 backup 删除。
+### 根目录
+`start.bat` / `start.sh` / `run_tests.bat`(一键脚本)、`docs/next-gen-architecture.md`(蓝图)、
+`.claude/launch.json`(预览配置)、`notebookflow/examples/`(示例数据与工作流)。
 
-**根因**:界面不直接读 `node_specs.py`,而是前端 `fetchNodeSpecs()` 请求 `GET /api/nodes`;后端未成功启动或 API 不可达时 `specs` 保持 `[]`,且失败仅 `console.error` 无界面提示,看起来像"节点不见了"。
+---
 
-| 环境 | 具体原因 | 修复 |
-|------|----------|------|
-| Windows | 原 `start.bat` 调用 PATH 上 Windows Store `python` 占位符,venv 创建失败,8000 无服务 | `start.bat` 改为默认 conda **`geoxai`**,启动前检查 pandas |
-| Windows | `geoflow` 环境 `import pandas` 崩溃,后端 import 即挂 | 改用 `geoxai`(可通过 `NOTEBOOKFLOW_CONDA_ENV` 覆盖) |
-| Mac / Win | `temp_node_factory.py` f-string 含反斜杠,Python 3.11 **SyntaxError**,后端无法 import | 提取 `intent_line` 变量后再拼 f-string(commit `beda28d`) |
-| 通用 | 浏览器打开 `http://localhost:8000`(API)而非 `http://localhost:5173`(UI) | 必须用 5173 访问前端 |
-| 自定义节点 | 存浏览器 `localStorage`,GIS/临时节点在内存,换机或重启即失 | 与内置 7 节点无关;需导出 JSON 或后续做持久化 |
+## 四、已知坑(踩过的,别再踩)
 
-**验证**:后端 `http://127.0.0.1:8000/api/nodes` 应返回 7 条 JSON;前端 5173 左侧应显示 Tabular(5)+GeoData(2)。Mac:`./start.sh`(Homebrew `python3`+`npm`,缺 Node 时提示 `brew install node`)。示例 workflow:`notebookflow/examples/geoflow_exmaple.json`(路径已改为 `../examples/...` 相对路径,跨平台可 Load)。
+1. **React Flow `updateNodeInternals` 不能在节点挂载时调用** —— 会在测量前清空 handle
+   bounds,连线永远不渲染;只在端口数变化时调用。
+2. **三角端口贴边**:RF 默认 handle 有 `translate(±50%, -50%)`,要覆盖 X 位移才能贴住节点。
+3. **`panOnDrag` 含右键(2)会吞掉 `onPaneContextMenu`** —— 只用 `[1]`(中键)。
+4. **Monaco `height="100%"`** 在自适应高度容器里塌缩为 0,必须给具体值(calc 也行)。
+5. **导出 notebook 的 params 不能用 `json.dumps`**(null→NameError),用 `pprint.pformat`。
+6. **Claude Preview 调试**:预览浏览器窗口可能塌缩成 2px 宽 → ResizeObserver 挂起 →
+   RF 测不了节点(节点 visibility:hidden、无连线)。重启 preview + `preview_resize` 1440×900,
+   截图强制出帧。这不是代码 bug。
+7. 浏览器永远拿不到文件夹绝对路径(安全模型),文件夹选择必须靠本地后端弹系统对话框。
+8. 旧保存的工作流 JSON 内嵌保存时的节点代码 —— 节点升级后(如 GeoMap 多图层)需从库重新添加。
+
+---
+
+## 五、下一步(按收益排序)
+
+1. **AI 自修复闭环**:compose 后自动 dry-run,报错节点 + traceback 回传 LLM 修复(≤N 轮)。
+2. **流式进度**:run 端点 SSE/WebSocket,节点逐个变绿(当前一次性返回)。
+3. **磁盘缓存**:ResultCache 落 Parquet/GeoParquet,重启进程仍有效。
+4. **数据感知规划**:上传文件后把 schema(列名/类型/CRS)自动写入 `data_context`(后端已支持,差前端传入)。
+5. **节点 SDK**:装饰器定义节点自动生成 spec + entry_points 插件机制。
+6. `gis_ingest.py` 仍是占位模板,按蓝图升级为 "LLM 生成完整 spec → 安全扫描 → 沙箱试跑 → 入库"。
+7. CWL 导出目前是接口预留(`cwl_hints` + 桩端点),真正执行需 CWL runner 镜像。
+8. 已知局限:多用户共享全局 store/cache(本地单用户可接受);原生文件夹对话框在无 GUI
+   环境(远程/容器)返回 501 并回退应用内浏览器。
