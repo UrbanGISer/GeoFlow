@@ -1280,6 +1280,112 @@ body,
   color: #fff;
 }
 
+/* ── Node label (top) + editable note (bottom), KNIME style ───────────────── */
+.nf-flow-node-caption-top {
+  margin-bottom: 3px;
+}
+
+.nf-node-annotation {
+  width: 120px; /* 3 × node box */
+  min-height: 12px;
+  margin-top: 3px;
+  text-align: center;
+  font-size: 11px;
+  color: #555;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  border-radius: 3px;
+}
+
+.nf-node-annotation:hover {
+  outline: 1px dashed #bbb;
+}
+
+.nf-node-annotation-edit {
+  width: 120px;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+  resize: none;
+  border: 1px solid #1976d2;
+  border-radius: 3px;
+  padding: 2px 3px;
+  font-family: inherit;
+  background: #fff;
+}
+
+/* ── Canvas text box (annotation node) ────────────────────────────────────── */
+.nf-annotation-box {
+  width: 100%;
+  height: 100%;
+  border: 1px solid;
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.nf-annotation-text {
+  width: 100%;
+  height: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.nf-annotation-edit {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.4;
+  padding: 0;
+}
+
+.nf-anno-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  font-size: 11px;
+  color: #555;
+}
+
+.nf-anno-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.nf-anno-toolbar input[type="color"] {
+  width: 22px;
+  height: 18px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.nf-anno-toolbar input[type="number"] {
+  width: 46px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+}
+
 /* ── Column dtype in table headers ────────────────────────────────────────── */
 .nf-table th .nf-col-dtype {
   display: block;

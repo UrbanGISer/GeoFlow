@@ -29,6 +29,7 @@ class WorkflowNode(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     code: str = ""
     input_count: int | None = None  # UI port count for dynamic-input nodes
+    annotation: str = ""  # KNIME-style note under the node (UI only, not fingerprinted)
 
 
 class WorkflowPayload(BaseModel):

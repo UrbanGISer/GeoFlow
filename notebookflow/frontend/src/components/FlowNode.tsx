@@ -4,8 +4,58 @@ import type { FlowNodeData } from "../types";
 import { inputHandleId } from "../types";
 import { usePortActions } from "./portActions";
 
+/** KNIME-style note under the node: double-click to edit, Esc cancels, blur commits. */
+function EditableAnnotation({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (editing) {
+    return (
+      <textarea
+        className="nf-node-annotation-edit nodrag nopan"
+        value={draft}
+        autoFocus
+        rows={Math.max(1, draft.split("\n").length)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          onCommit(draft.trimEnd());
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <div
+      className="nf-node-annotation"
+      title="Double-click to edit note"
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setDraft(value);
+        setEditing(true);
+      }}
+    >
+      {value}
+    </div>
+  );
+}
+
 export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) {
-  const { addInput, removeInput } = usePortActions();
+  const { addInput, removeInput, updateNodeData } = usePortActions();
   const updateNodeInternals = useUpdateNodeInternals();
   const [portEdit, setPortEdit] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -64,6 +114,7 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
 
   return (
     <div className="nf-flow-node-root" ref={rootRef}>
+      <div className="nf-flow-node-caption nf-flow-node-caption-top">{data.label}</div>
       <div className="nf-flow-node-core" style={{ height: coreHeight }}>
         {handles.map((portIndex) => (
           <Handle
@@ -129,7 +180,10 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
           </div>
         ) : null}
       </div>
-      <div className="nf-flow-node-caption">{data.label}</div>
+      <EditableAnnotation
+        value={(data.annotation as string) ?? ""}
+        onCommit={(text) => updateNodeData(id, { annotation: text })}
+      />
     </div>
   );
 }

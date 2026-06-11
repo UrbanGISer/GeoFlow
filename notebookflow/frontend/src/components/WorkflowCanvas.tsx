@@ -17,11 +17,12 @@ import {
 import { useMemo } from "react";
 import "@xyflow/react/dist/style.css";
 import type { FlowNodeData } from "../types";
+import { AnnotationNode } from "./AnnotationNode";
 import { FlowNode } from "./FlowNode";
 import { DRAG_TYPE } from "./NodeLibrary";
 import { PortActionsContext, type PortActions } from "./portActions";
 
-const nodeTypes: NodeTypes = { notebook: FlowNode };
+const nodeTypes: NodeTypes = { notebook: FlowNode, annotation: AnnotationNode };
 
 interface WorkflowCanvasInnerProps {
   nodes: Node<FlowNodeData>[];
@@ -35,6 +36,7 @@ interface WorkflowCanvasInnerProps {
   onDropSpec?: (specId: string, position: { x: number; y: number }) => void;
   onAddInput?: (nodeId: string) => void;
   onRemoveInput?: (nodeId: string) => void;
+  onUpdateNodeData?: (nodeId: string, patch: Record<string, unknown>) => void;
   onNodeMenu?: (pos: { x: number; y: number }, node: Node<FlowNodeData>) => void;
   onEdgeMenu?: (pos: { x: number; y: number }, edge: Edge) => void;
   onPaneMenu?: (pos: { x: number; y: number }, flowPos: { x: number; y: number }) => void;
@@ -52,6 +54,7 @@ function WorkflowCanvasInner({
   onDropSpec,
   onAddInput,
   onRemoveInput,
+  onUpdateNodeData,
   onNodeMenu,
   onEdgeMenu,
   onPaneMenu,
@@ -63,8 +66,9 @@ function WorkflowCanvasInner({
     () => ({
       addInput: (nodeId) => onAddInput?.(nodeId),
       removeInput: (nodeId) => onRemoveInput?.(nodeId),
+      updateNodeData: (nodeId, patch) => onUpdateNodeData?.(nodeId, patch),
     }),
-    [onAddInput, onRemoveInput],
+    [onAddInput, onRemoveInput, onUpdateNodeData],
   );
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {

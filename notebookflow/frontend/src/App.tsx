@@ -12,15 +12,20 @@ import {
 } from "@xyflow/react";
 import { fetchNodeSpecs, runSingleNode, runWorkflow } from "./api/client";
 import { AIStudioPage } from "./components/AIStudioPage";
+import {
+  ANNOTATION_NODE_TYPE,
+  DEFAULT_ANNOTATION_DATA,
+  type AnnotationBoxData,
+} from "./components/AnnotationNode";
 import { CanvasContextMenu, type ContextMenuItem } from "./components/CanvasContextMenu";
 import { LeftPanel } from "./components/LeftPanel";
-import { NodeCreatorModal } from "./components/NodeCreatorModal";
 import { NodeNotebookModal } from "./components/NodeNotebookModal";
 import { OutputPreview } from "./components/OutputPreview";
 import { PlanReviewPanel } from "./components/PlanReviewPanel";
 import { SelectedNodePanel } from "./components/SelectedNodePanel";
 import { WorkflowCanvas } from "./components/WorkflowCanvas";
 import type {
+  AnnotationBoxPayload,
   ComposeWorkflowResponse,
   FlowNodeData,
   NodeOutputsMap,
@@ -53,12 +58,17 @@ function flowExtras(
   };
 }
 
+function isAnnotation(n: Node<FlowNodeData>): boolean {
+  return n.type === ANNOTATION_NODE_TYPE;
+}
+
 function buildPayload(nodes: Node<FlowNodeData>[], edges: Edge[]): {
   nodes: WorkflowNodePayload[];
   edges: WorkflowEdgePayload[];
 } {
   return {
-    nodes: nodes.map((n) => ({
+    // Text boxes are UI-only — never sent to the engine.
+    nodes: nodes.filter((n) => !isAnnotation(n)).map((n) => ({
       id: n.id,
       type: n.data.type,
       label: n.data.label,
@@ -67,6 +77,7 @@ function buildPayload(nodes: Node<FlowNodeData>[], edges: Edge[]): {
       params: n.data.params,
       code: n.data.code,
       input_count: n.data.inputCount,
+      annotation: n.data.annotation ?? "",
     })),
     edges: edges.map((e) => ({
       id: e.id,
@@ -81,10 +92,19 @@ function buildPayload(nodes: Node<FlowNodeData>[], edges: Edge[]): {
 interface SavedWorkflow {
   nodes: Array<WorkflowNodePayload & { position: { x: number; y: number } }>;
   edges: WorkflowEdgePayload[];
+  annotations?: AnnotationBoxPayload[];
 }
 
 interface ClipboardContent {
-  nodes: Array<{ id: string; position: { x: number; y: number }; data: FlowNodeData }>;
+  nodes: Array<{
+    id: string;
+    type?: string;
+    position: { x: number; y: number };
+    width?: number;
+    height?: number;
+    zIndex?: number;
+    data: FlowNodeData;
+  }>;
   edges: Array<{
     source: string;
     target: string;
@@ -98,6 +118,7 @@ interface CtxMenuState {
   x: number;
   y: number;
   targetId?: string;
+  targetType?: string;
   flowPos?: { x: number; y: number };
 }
 
@@ -123,7 +144,6 @@ export default function App() {
   const [draftParams, setDraftParams] = useState<Record<string, unknown> | null>(null);
   const [draftCode, setDraftCode] = useState("");
   const [runBusy, setRunBusy] = useState(false);
-  const [nodeCreatorOpen, setNodeCreatorOpen] = useState(false);
   const [composeResult, setComposeResult] = useState<ComposeWorkflowResponse | null>(null);
   const [aiStudioOpen, setAiStudioOpen] = useState(false);
   const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
@@ -151,19 +171,6 @@ export default function App() {
         } catch { setSpecs(baseSpecs); }
       })
       .catch((e) => console.error(e));
-  }, []);
-
-  const handleCreateNodeSpec = useCallback((spec: NodeSpec) => {
-    const id = spec.id.trim();
-    if (!id) { alert("Node id is required."); return; }
-    setSpecs((prev) => {
-      if (prev.some((s) => s.id === id)) { alert(`Node id already exists: ${id}`); return prev; }
-      const next = [...prev, { ...spec, id, name: id }];
-      const builtinIds = new Set(next.filter((s) => !s.temporary).map((s) => s.id));
-      const customOnly = next.filter((s) => !s.temporary && !builtinIds.has(s.id));
-      localStorage.setItem(CUSTOM_NODES_STORAGE_KEY, JSON.stringify(customOnly));
-      return next;
-    });
   }, []);
 
   const mergeSpecs = useCallback((incoming: NodeSpec[]) => {
@@ -215,6 +222,9 @@ export default function App() {
     });
   }, []);
 
+  // Sequence for default node notes ("Node 1", "Node 2", …), KNIME style.
+  const nodeSeqRef = useRef(1);
+
   const buildNode = useCallback(
     (spec: NodeSpec, position: { x: number; y: number }): Node<FlowNodeData> => {
       const extras = flowExtras(spec);
@@ -230,6 +240,7 @@ export default function App() {
           code: spec.default_code,
           status: "idle",
           color: spec.color,
+          annotation: `Node ${nodeSeqRef.current++}`,
           ...extras,
         },
       };
@@ -237,18 +248,56 @@ export default function App() {
     [],
   );
 
+  const updateNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
+    setNodes((ns) =>
+      ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)),
+    );
+  }, []);
+
+  const addAnnotationBox = useCallback((flowPos: { x: number; y: number }) => {
+    const data: AnnotationBoxData & FlowNodeData = {
+      ...DEFAULT_ANNOTATION_DATA,
+      label: "",
+      type: ANNOTATION_NODE_TYPE,
+      category: "",
+      params: {},
+      code: "",
+      status: "idle",
+      color: "",
+      showInput: false,
+      outputHandle: "df_out",
+      showOutput: false,
+    };
+    setNodes((ns) => [
+      ...ns,
+      {
+        id: newNodeId(),
+        type: ANNOTATION_NODE_TYPE,
+        position: flowPos,
+        width: 220,
+        height: 110,
+        zIndex: -1, // behind workflow nodes
+        data,
+      },
+    ]);
+  }, []);
+
   // Node square is 40px; new nodes land 1.5 box-widths to the right of the
   // selected node (gap = 1.5 × 40, so x advances by 2.5 × 40).
   const NODE_BOX = 40;
 
   const handleAddNode = useCallback(
     (spec: NodeSpec) => {
-      const sel = selectedId ? nodes.find((n) => n.id === selectedId) : undefined;
+      const flowNodes = nodes.filter((n) => !isAnnotation(n));
+      const sel =
+        selectedId !== null
+          ? flowNodes.find((n) => n.id === selectedId)
+          : undefined;
       let pos: { x: number; y: number };
       if (sel) {
         pos = { x: sel.position.x + NODE_BOX * 2.5, y: sel.position.y };
-      } else if (nodes.length) {
-        const rightmost = nodes.reduce((a, b) => (a.position.x >= b.position.x ? a : b));
+      } else if (flowNodes.length) {
+        const rightmost = flowNodes.reduce((a, b) => (a.position.x >= b.position.x ? a : b));
         pos = { x: rightmost.position.x + NODE_BOX * 2.5, y: rightmost.position.y };
       } else {
         pos = { x: 100, y: 140 };
@@ -351,7 +400,11 @@ export default function App() {
       clipboardRef.current = {
         nodes: chosen.map((n) => ({
           id: n.id,
+          type: n.type,
           position: { x: n.position.x, y: n.position.y },
+          width: n.width,
+          height: n.height,
+          zIndex: n.zIndex,
           data: structuredClone({ ...n.data, status: "idle" as const }),
         })),
         edges: edges
@@ -383,8 +436,11 @@ export default function App() {
       idMap.set(cn.id, nid);
       return {
         id: nid,
-        type: "notebook",
+        type: cn.type ?? "notebook",
         position: { x: cn.position.x + offset.x, y: cn.position.y + offset.y },
+        width: cn.width,
+        height: cn.height,
+        zIndex: cn.zIndex,
         selected: true,
         data: structuredClone(cn.data),
       };
@@ -507,12 +563,26 @@ export default function App() {
   };
 
   const handleSaveJson = () => {
+    const flowNodes = nodes.filter((n) => !isAnnotation(n));
+    const annoNodes = nodes.filter(isAnnotation);
     const wf: SavedWorkflow = {
-      nodes: nodes.map((n) => ({
+      nodes: flowNodes.map((n) => ({
         id: n.id, type: n.data.type, label: n.data.label, category: n.data.category,
         position: { x: n.position.x, y: n.position.y }, params: n.data.params, code: n.data.code,
+        input_count: n.data.inputCount, annotation: n.data.annotation ?? "",
       })),
       edges: buildPayload(nodes, edges).edges,
+      annotations: annoNodes.map((n) => ({
+        id: n.id,
+        position: { x: n.position.x, y: n.position.y },
+        width: n.width ?? n.measured?.width ?? 220,
+        height: n.height ?? n.measured?.height ?? 110,
+        text: String(n.data.text ?? ""),
+        fill: String(n.data.fill ?? DEFAULT_ANNOTATION_DATA.fill),
+        fontSize: Number(n.data.fontSize ?? DEFAULT_ANNOTATION_DATA.fontSize),
+        fontColor: String(n.data.fontColor ?? DEFAULT_ANNOTATION_DATA.fontColor),
+        borderColor: String(n.data.borderColor ?? DEFAULT_ANNOTATION_DATA.borderColor),
+      })),
     };
     const blob = new Blob([JSON.stringify(wf, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -522,10 +592,26 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   };
 
+  const annotationBoxToNode = useCallback((a: AnnotationBoxPayload): Node<FlowNodeData> => ({
+    id: a.id || newNodeId(),
+    type: ANNOTATION_NODE_TYPE,
+    position: a.position,
+    width: a.width,
+    height: a.height,
+    zIndex: -1,
+    data: {
+      text: a.text, fill: a.fill, fontSize: a.fontSize,
+      fontColor: a.fontColor, borderColor: a.borderColor,
+      label: "", type: ANNOTATION_NODE_TYPE, category: "", params: {}, code: "",
+      status: "idle", color: "", showInput: false, outputHandle: "df_out", showOutput: false,
+    },
+  }), []);
+
   const restoreWorkflow = useCallback(
     (wf: SavedWorkflow) => {
-      const nextNodes: Node<FlowNodeData>[] = wf.nodes.map((sn) => {
+      const nextNodes: Node<FlowNodeData>[] = wf.nodes.map((sn, i) => {
         const spec = specs.find((s) => s.id === sn.type);
+        const annotation = sn.annotation ?? `Node ${i + 1}`;
         if (!spec) {
           return {
             id: sn.id, type: "notebook", position: sn.position,
@@ -533,6 +619,7 @@ export default function App() {
               label: sn.label, type: sn.type, category: sn.category ?? "Unknown",
               params: sn.params ?? {}, code: sn.code ?? "", status: "idle" as const,
               color: "#bdbdbd", showInput: true, outputHandle: "df_out" as const, showOutput: true,
+              annotation,
             },
           };
         }
@@ -545,18 +632,20 @@ export default function App() {
           data: {
             label: sn.label, type: sn.type, category: sn.category ?? spec.category,
             params: sn.params ?? {}, code: sn.code ?? "", status: "idle" as const,
-            color: spec.color, ...extras,
+            color: spec.color, annotation, ...extras,
           },
         };
       });
+      const annoNodes = (wf.annotations ?? []).map(annotationBoxToNode);
       const nextEdges: Edge[] = wf.edges.map((e) => ({
         id: e.id, source: e.source, target: e.target,
         sourceHandle: e.sourceHandle ?? "df_out", targetHandle: e.targetHandle ?? "df_in",
       }));
-      setNodes(nextNodes); setEdges(nextEdges);
+      nodeSeqRef.current = nextNodes.length + 1;
+      setNodes([...annoNodes, ...nextNodes]); setEdges(nextEdges);
       setSelectedId(null); setModalNodeId(null); setNodeOutputs({}); setWorkflowError(null);
     },
-    [specs],
+    [specs, annotationBoxToNode],
   );
 
   const applyWorkflowPayload = useCallback(
@@ -578,7 +667,8 @@ export default function App() {
           data: {
             label: sn.label, type: sn.type, category: sn.category ?? spec?.category ?? "Unknown",
             params: sn.params ?? {}, code: sn.code ?? spec?.default_code ?? "",
-            status: "idle" as const, color: spec?.color ?? "#8e24aa", ...extras,
+            status: "idle" as const, color: spec?.color ?? "#8e24aa",
+            annotation: sn.annotation ?? `Node ${i + 1}`, ...extras,
           },
         };
       });
@@ -690,19 +780,29 @@ export default function App() {
   let ctxItems: ContextMenuItem[] = [];
   if (ctxMenu?.kind === "node" && ctxMenu.targetId) {
     const nid = ctxMenu.targetId;
-    ctxItems = [
-      { label: "Run", disabled: runBusy, onClick: () => void runNodeById(nid) },
-      {
-        label: "Copy",
-        shortcut: "⌘C",
-        onClick: () => {
-          const sel = nodes.filter((n) => n.selected).map((n) => n.id);
-          copyNodes(sel.includes(nid) ? sel : [nid]);
-        },
+    const copyItem: ContextMenuItem = {
+      label: "Copy",
+      shortcut: "⌘C",
+      onClick: () => {
+        const sel = nodes.filter((n) => n.selected).map((n) => n.id);
+        copyNodes(sel.includes(nid) ? sel : [nid]);
       },
-      { label: "Reset", onClick: () => resetNodeById(nid) },
-      { label: "Delete", shortcut: "⌫", danger: true, onClick: () => deleteNodeById(nid) },
-    ];
+    };
+    const deleteItem: ContextMenuItem = {
+      label: "Delete",
+      shortcut: "⌫",
+      danger: true,
+      onClick: () => deleteNodeById(nid),
+    };
+    ctxItems =
+      ctxMenu.targetType === ANNOTATION_NODE_TYPE
+        ? [copyItem, deleteItem]
+        : [
+            { label: "Run", disabled: runBusy, onClick: () => void runNodeById(nid) },
+            copyItem,
+            { label: "Reset", onClick: () => resetNodeById(nid) },
+            deleteItem,
+          ];
   } else if (ctxMenu?.kind === "edge" && ctxMenu.targetId) {
     const eid = ctxMenu.targetId;
     ctxItems = [
@@ -716,6 +816,12 @@ export default function App() {
         shortcut: "⌘V",
         disabled: !clipboardRef.current?.nodes.length,
         onClick: () => pasteNodes(flowPos),
+      },
+      {
+        label: "Add Text Box",
+        onClick: () => {
+          if (flowPos) addAnnotationBox(flowPos);
+        },
       },
     ];
   }
@@ -736,9 +842,6 @@ export default function App() {
           </button>
           <button type="button" className="nf-btn" onClick={() => fileInputRef.current?.click()}>
             Load
-          </button>
-          <button type="button" className="nf-btn" onClick={() => setNodeCreatorOpen(true)}>
-            Manual Node
           </button>
           <button
             type="button"
@@ -779,13 +882,24 @@ export default function App() {
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onNodesDelete={onNodesDelete}
-                  onNodeDoubleClick={(_e: MouseEvent, node) => setModalNodeId(node.id)}
-                  onNodeClick={(_e: MouseEvent, node) => handleSelectNode(node.id)}
+                  onNodeDoubleClick={(_e: MouseEvent, node) => {
+                    if (!isAnnotation(node)) setModalNodeId(node.id);
+                  }}
+                  onNodeClick={(_e: MouseEvent, node) => {
+                    if (!isAnnotation(node)) handleSelectNode(node.id);
+                  }}
                   onDropSpec={handleDropSpec}
                   onAddInput={handleAddInputPort}
                   onRemoveInput={handleRemoveInputPort}
+                  onUpdateNodeData={updateNodeData}
                   onNodeMenu={(pos, node) =>
-                    setCtxMenu({ kind: "node", x: pos.x, y: pos.y, targetId: node.id })
+                    setCtxMenu({
+                      kind: "node",
+                      x: pos.x,
+                      y: pos.y,
+                      targetId: node.id,
+                      targetType: node.type,
+                    })
                   }
                   onEdgeMenu={(pos, edge) =>
                     setCtxMenu({ kind: "edge", x: pos.x, y: pos.y, targetId: edge.id })
@@ -835,12 +949,6 @@ export default function App() {
           </div>
         </Panel>
       </Group>
-
-      <NodeCreatorModal
-        open={nodeCreatorOpen}
-        onClose={() => setNodeCreatorOpen(false)}
-        onCreate={handleCreateNodeSpec}
-      />
 
       <NodeNotebookModal
         open={modalNodeId !== null}

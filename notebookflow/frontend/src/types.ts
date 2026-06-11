@@ -34,6 +34,20 @@ export interface WorkflowNodePayload {
   params: Record<string, unknown>;
   code: string;
   input_count?: number;
+  annotation?: string;
+}
+
+/** Free-floating canvas text box (saved alongside the workflow, never executed). */
+export interface AnnotationBoxPayload {
+  id: string;
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+  text: string;
+  fill: string;
+  fontSize: number;
+  fontColor: string;
+  borderColor: string;
 }
 
 export interface WorkflowEdgePayload {
@@ -187,6 +201,8 @@ export interface FlowNodeData {
   inputCount?: number;
   /** User may add/remove input ports via +/− on the node */
   dynamicInputs?: boolean;
+  /** KNIME-style editable note shown under the node icon */
+  annotation?: string;
 }
 
 /** Port handle id for the n-th input (1-based): df_in, df_in_2, df_in_3, … */
