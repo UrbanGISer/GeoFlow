@@ -53,11 +53,13 @@ export function NodeNotebookModal({
 }: NodeNotebookModalProps) {
   const [local, setLocal] = useState<FlowNodeData | null>(null);
   const [singleRunError, setSingleRunError] = useState<string | null>(null);
+  const [codeOpen, setCodeOpen] = useState(false);
 
   useEffect(() => {
     if (node) {
       setLocal({ ...node.data });
       setSingleRunError(null);
+      setCodeOpen(false); // code folded by default
     }
   }, [node]);
 
@@ -144,12 +146,34 @@ export function NodeNotebookModal({
           </section>
 
           <section className="nf-modal-section">
-            <h3>Python</h3>
-            <p className="nf-help">
-              Use <code>df_in</code>, <code>params</code>, assign <code>df_out</code> and/or{" "}
-              <code>html_out</code>.
-            </p>
-            <CodeEditor value={local.code} onChange={(code) => setLocal({ ...local, code })} height="280px" />
+            <div className="nf-node-editor-h3-row">
+              <button
+                type="button"
+                className="nf-code-fold-toggle"
+                title={codeOpen ? "Fold code" : "Show code"}
+                onClick={() => setCodeOpen((v) => !v)}
+              >
+                <span className="nf-group-arrow">{codeOpen ? "▾" : "▸"}</span>
+                <h3 style={{ margin: 0 }}>Python</h3>
+              </button>
+            </div>
+            {codeOpen ? (
+              <>
+                <p className="nf-help">
+                  Use <code>df_in</code>, <code>params</code>, assign <code>df_out</code> and/or{" "}
+                  <code>html_out</code>.
+                </p>
+                <CodeEditor value={local.code} onChange={(code) => setLocal({ ...local, code })} height="280px" />
+              </>
+            ) : (
+              <button
+                type="button"
+                className="nf-code-folded-hint"
+                onClick={() => setCodeOpen(true)}
+              >
+                {local.code.split("\n").length} lines — click to show
+              </button>
+            )}
           </section>
 
           <section className="nf-modal-section nf-modal-output">

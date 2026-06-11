@@ -6,13 +6,50 @@ import { Markdown } from "./Markdown";
 import { NodeLibrary } from "./NodeLibrary";
 import { WorkspacePanel } from "./WorkspacePanel";
 
-type LeftTab = "nodes" | "info" | "workspace" | "ai";
+export type LeftTab = "nodes" | "info" | "workspace" | "ai";
+
+const TABS: Array<{ id: LeftTab; icon: string; label: string }> = [
+  { id: "nodes", icon: "▦", label: "Nodes" },
+  { id: "info", icon: "ⓘ", label: "Info" },
+  { id: "workspace", icon: "📁", label: "Workspace" },
+  { id: "ai", icon: "✦", label: "AI Settings" },
+];
+
+/** KNIME-style vertical icon rail — always visible; clicking an icon
+ * expands the panel, clicking the active icon collapses it. */
+export function SideRail({
+  active,
+  onPick,
+}: {
+  active: LeftTab | null;
+  onPick: (tab: LeftTab) => void;
+}) {
+  return (
+    <div className="nf-side-rail">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className={`nf-rail-btn${active === t.id ? " nf-rail-btn-active" : ""}`}
+          title={t.label}
+          aria-label={t.label}
+          onClick={() => onPick(t.id)}
+        >
+          <span className="nf-rail-icon">{t.icon}</span>
+          <span className="nf-rail-label">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface LeftPanelProps {
   specs: NodeSpec[];
   onAdd: (spec: NodeSpec) => void;
   selectedSpec?: NodeSpec | null;
   onOpenFile?: (path: string) => void;
+  activeTab: LeftTab;
+  onCollapse: () => void;
 }
 
 function InfoTab({ spec }: { spec?: NodeSpec | null }) {
@@ -87,34 +124,25 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
   );
 }
 
-export function LeftPanel({ specs, onAdd, selectedSpec, onOpenFile }: LeftPanelProps) {
-  const [activeTab, setActiveTab] = useState<LeftTab>("nodes");
+export function LeftPanel({
+  specs,
+  onAdd,
+  selectedSpec,
+  onOpenFile,
+  activeTab,
+  onCollapse,
+}: LeftPanelProps) {
   const [librarySpec, setLibrarySpec] = useState<NodeSpec | null>(null);
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => loadAIConfig());
 
   // Canvas selection wins; otherwise last library click.
   const displaySpec = selectedSpec ?? librarySpec;
-
-  const tabs: Array<{ id: LeftTab; label: string }> = [
-    { id: "nodes", label: "Nodes" },
-    { id: "info", label: "Info" },
-    { id: "workspace", label: "Workspace" },
-    { id: "ai", label: "AI" },
-  ];
+  const title = TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   return (
     <div className="nf-left-panel">
-      <div className="nf-left-tab-bar">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`nf-left-tab-btn${activeTab === t.id ? " nf-left-tab-btn-active" : ""}`}
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="nf-left-header">
+        <span className="nf-left-header-title">{title}</span>
       </div>
       <div className="nf-left-tab-content">
         {activeTab === "nodes" ? (
@@ -133,6 +161,15 @@ export function LeftPanel({ specs, onAdd, selectedSpec, onOpenFile }: LeftPanelP
           </div>
         ) : null}
       </div>
+      <button
+        type="button"
+        className="nf-collapse-strip"
+        title="Collapse panel"
+        aria-label="Collapse panel"
+        onClick={onCollapse}
+      >
+        ◀
+      </button>
     </div>
   );
 }

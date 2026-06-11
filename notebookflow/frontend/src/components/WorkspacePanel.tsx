@@ -42,7 +42,6 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pathInput, setPathInput] = useState("");
-  const [root, setRoot] = useState<string | null>(() => loadWorkspaceRoot());
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const load = useCallback(async (path?: string | null) => {
@@ -52,6 +51,9 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
       const res = await workspaceList(path);
       setListing(res);
       setPathInput(res.path);
+      // The folder you browse to IS the workspace root (default for
+      // future sessions and for Save Workflow).
+      saveWorkspaceRoot(res.path);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -60,8 +62,22 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   }, []);
 
   useEffect(() => {
-    // Pinned root wins; otherwise the backend default workspace.
-    load(loadWorkspaceRoot());
+    // Resume the last-used folder; fall back to the backend default if
+    // it no longer exists.
+    (async () => {
+      const stored = loadWorkspaceRoot();
+      if (stored) {
+        try {
+          const res = await workspaceList(stored);
+          setListing(res);
+          setPathInput(res.path);
+          return;
+        } catch {
+          saveWorkspaceRoot(null);
+        }
+      }
+      void load(null);
+    })();
   }, [load]);
 
   // External refresh (e.g. after Save Workflow writes a file here).
@@ -111,8 +127,6 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
     }
   };
 
-  const isRoot = listing != null && root === listing.path;
-
   return (
     <div className="nf-workspace-panel">
       <div className="nf-workspace-toolbar">
@@ -146,27 +160,9 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
           + File
         </button>
         <button type="button" className="nf-btn nf-btn-sm" disabled={busy}
-          title="Browse for a folder to open here"
+          title="Browse for a folder — it becomes the workspace root"
           onClick={() => setPickerOpen(true)}>
           Browse…
-        </button>
-        <button
-          type="button"
-          className={`nf-btn nf-btn-sm${isRoot ? " nf-btn-pinned" : ""}`}
-          disabled={busy || !listing}
-          title={isRoot ? "This folder is the workspace root (click to unpin)" : "Pin this folder as the workspace root — default for browsing and Save Workflow"}
-          onClick={() => {
-            if (!listing) return;
-            if (isRoot) {
-              saveWorkspaceRoot(null);
-              setRoot(null);
-            } else {
-              saveWorkspaceRoot(listing.path);
-              setRoot(listing.path);
-            }
-          }}
-        >
-          {isRoot ? "📌 Root ✓" : "📌 Set Root"}
         </button>
       </div>
       {error ? <p className="nf-error-text" style={{ padding: "4px 10px" }}>{error}</p> : null}
@@ -205,7 +201,7 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
       </div>
       <FolderPickerModal
         open={pickerOpen}
-        initialPath={listing?.path ?? root}
+        initialPath={listing?.path ?? null}
         title="Browse Folder"
         onSelect={(path) => void load(path)}
         onClose={() => setPickerOpen(false)}

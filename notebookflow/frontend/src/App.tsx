@@ -18,7 +18,7 @@ import {
   type AnnotationBoxData,
 } from "./components/AnnotationNode";
 import { CanvasContextMenu, type ContextMenuItem } from "./components/CanvasContextMenu";
-import { LeftPanel } from "./components/LeftPanel";
+import { LeftPanel, SideRail, type LeftTab } from "./components/LeftPanel";
 import { NodeNotebookModal } from "./components/NodeNotebookModal";
 import { OutputPreview } from "./components/OutputPreview";
 import { PlanReviewPanel } from "./components/PlanReviewPanel";
@@ -150,6 +150,8 @@ export default function App() {
   const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  // KNIME-style icon rail: null = panel collapsed (default).
+  const [leftTab, setLeftTab] = useState<LeftTab | null>(null);
   const clipboardRef = useRef<ClipboardContent | null>(null);
   const pasteCountRef = useRef(0);
 
@@ -904,18 +906,30 @@ export default function App() {
 
       <Group orientation="vertical" id="nf-layout-vertical" className="nf-workspace">
         <Panel id="nf-main-area" defaultSize="72%" minSize="35%">
+          <div className="nf-main-with-rail">
+          <SideRail
+            active={leftTab}
+            onPick={(tab) => setLeftTab((cur) => (cur === tab ? null : tab))}
+          />
+          <div className="nf-rail-content">
           <Group orientation="horizontal" id="nf-layout-horizontal" className="nf-main-row-panel">
-            <Panel id="nf-sidebar" defaultSize="18%" minSize="12%" maxSize="32%">
-              <div className="nf-panel-fill">
-                <LeftPanel
-                  specs={specs}
-                  onAdd={handleAddNode}
-                  selectedSpec={selectedNode ? specById[selectedNode.data.type] : selectedSpec}
-                  onOpenFile={handleOpenWorkspaceFile}
-                />
-              </div>
-            </Panel>
-            <Separator className="nf-resize-handle nf-resize-v" />
+            {leftTab ? (
+              <>
+                <Panel id="nf-sidebar" defaultSize="22%" minSize="14%" maxSize="36%">
+                  <div className="nf-panel-fill">
+                    <LeftPanel
+                      specs={specs}
+                      onAdd={handleAddNode}
+                      selectedSpec={selectedNode ? specById[selectedNode.data.type] : selectedSpec}
+                      onOpenFile={handleOpenWorkspaceFile}
+                      activeTab={leftTab}
+                      onCollapse={() => setLeftTab(null)}
+                    />
+                  </div>
+                </Panel>
+                <Separator className="nf-resize-handle nf-resize-v" />
+              </>
+            ) : null}
             <Panel id="nf-canvas" defaultSize="52%" minSize="28%">
               <div className="nf-panel-fill">
                 <WorkflowCanvas
@@ -976,6 +990,8 @@ export default function App() {
               </div>
             </Panel>
           </Group>
+          </div>
+          </div>
         </Panel>
         <Separator className="nf-resize-handle nf-resize-h" />
         <Panel id="nf-console" defaultSize="28%" minSize="12%" maxSize="55%">

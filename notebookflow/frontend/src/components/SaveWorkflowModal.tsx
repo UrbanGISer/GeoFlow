@@ -78,7 +78,7 @@ export function SaveWorkflowModal({ open, getContent, onDownload, onClose }: Sav
               </button>
             </div>
             <span className="nf-field-hint">
-              Empty = default workspace. Pin a folder via the Workspace tab’s 📌 Set Root to change the default.
+              Defaults to your workspace folder (the folder currently open in the Workspace tab).
             </span>
           </div>
           <div className="nf-field" style={{ marginBottom: 12 }}>

@@ -63,6 +63,7 @@ function OutputPreviewInner({
             >
               Console
             </button>
+            {nodeLabel ? <span className="nf-bottom-node-label" title={nodeLabel}>{nodeLabel}</span> : null}
             <button
               type="button"
               className={`nf-bottom-tab${bottomTab === "logs" ? " nf-bottom-tab-active" : ""}`}
@@ -71,10 +72,12 @@ function OutputPreviewInner({
               Logs{logs && logs.length ? ` (${logs.length})` : ""}
             </button>
           </div>
-        ) : title ? (
-          <h2 className="nf-panel-title">{title}</h2>
-        ) : null}
-        {nodeLabel ? <span className="nf-muted">{nodeLabel}</span> : null}
+        ) : (
+          <>
+            {title ? <h2 className="nf-panel-title">{title}</h2> : null}
+            {nodeLabel ? <span className="nf-muted">{nodeLabel}</span> : null}
+          </>
+        )}
       </div>
       {showTabs && bottomTab === "logs" ? (
         <div className="nf-bottom-body">
