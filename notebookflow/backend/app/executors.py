@@ -36,18 +36,30 @@ def execute_node_code(
     code: str,
     df_in: pd.DataFrame | None,
     params: dict[str, Any],
+    extra_inputs: list[pd.DataFrame | None] | None = None,
 ) -> tuple[Any, Any]:
     """
     Run node code with df_in, params. Returns (df_out, html_out).
     Either may be None if not set by the cell.
+
+    Multi-input nodes additionally receive:
+      df_in_2, df_in_3, ... — one variable per extra input port
+      df_ins — ordered list of ALL inputs (df_in first), Nones included
     """
+    extras = extra_inputs or []
     local_ns: dict[str, Any] = {
         "pd": pd,
         "df_in": df_in,
         "params": params,
         "df_out": None,
         "html_out": None,
+        "df_ins": [df_in, *extras],
     }
+    # df_in_2 is always defined (None when port unconnected) so node code can
+    # branch on it without NameError; higher ports defined only when present.
+    local_ns["df_in_2"] = extras[0] if len(extras) >= 1 else None
+    for i, df in enumerate(extras[1:], start=3):
+        local_ns[f"df_in_{i}"] = df
     glob_ns: dict[str, Any] = {
         "__builtins__": __builtins__,
         "pd": pd,

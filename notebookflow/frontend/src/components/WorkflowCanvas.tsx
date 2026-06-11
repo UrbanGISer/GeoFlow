@@ -14,10 +14,12 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
+import { useMemo } from "react";
 import "@xyflow/react/dist/style.css";
 import type { FlowNodeData } from "../types";
 import { FlowNode } from "./FlowNode";
 import { DRAG_TYPE } from "./NodeLibrary";
+import { PortActionsContext, type PortActions } from "./portActions";
 
 const nodeTypes: NodeTypes = { notebook: FlowNode };
 
@@ -31,6 +33,8 @@ interface WorkflowCanvasInnerProps {
   onNodeDoubleClick: (_: MouseEvent, node: Node<FlowNodeData>) => void;
   onNodeClick: (_: MouseEvent, node: Node<FlowNodeData>) => void;
   onDropSpec?: (specId: string, position: { x: number; y: number }) => void;
+  onAddInput?: (nodeId: string) => void;
+  onRemoveInput?: (nodeId: string) => void;
 }
 
 function WorkflowCanvasInner({
@@ -43,9 +47,19 @@ function WorkflowCanvasInner({
   onNodeDoubleClick,
   onNodeClick,
   onDropSpec,
+  onAddInput,
+  onRemoveInput,
 }: WorkflowCanvasInnerProps) {
   const empty = nodes.length === 0;
   const { screenToFlowPosition } = useReactFlow();
+
+  const portActions = useMemo<PortActions>(
+    () => ({
+      addInput: (nodeId) => onAddInput?.(nodeId),
+      removeInput: (nodeId) => onRemoveInput?.(nodeId),
+    }),
+    [onAddInput, onRemoveInput],
+  );
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
@@ -74,6 +88,7 @@ function WorkflowCanvasInner({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        <PortActionsContext.Provider value={portActions}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -92,6 +107,7 @@ function WorkflowCanvasInner({
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#d0d0d0" />
           <Controls showInteractive={false} />
         </ReactFlow>
+        </PortActionsContext.Provider>
         {empty ? (
           <div className="nf-canvas-empty" aria-hidden="true">
             <p className="nf-canvas-empty-title">Canvas</p>

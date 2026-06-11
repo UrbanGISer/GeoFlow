@@ -28,6 +28,7 @@ class WorkflowNode(BaseModel):
     position: Position | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     code: str = ""
+    input_count: int | None = None  # UI port count for dynamic-input nodes
 
 
 class WorkflowPayload(BaseModel):
@@ -82,6 +83,8 @@ class NodeSpec(BaseModel):
     parameters: list[ParameterSpec]
     default_params: dict[str, Any]
     default_code: str
+    description: str = ""  # markdown shown in the Info tab
+    dynamic_inputs: bool = False  # user can add/remove input ports (+/− on node)
     temporary: bool = False
     provenance: dict[str, Any] | None = None
     cwl_hints: dict[str, Any] | None = None  # reserved for CWL export

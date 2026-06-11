@@ -80,7 +80,12 @@ function OutputPreviewInner({
                 <thead>
                   <tr>
                     {df.columns.map((c) => (
-                      <th key={c}>{c}</th>
+                      <th key={c}>
+                        {c}
+                        {df.dtypes?.[c] ? (
+                          <span className="nf-col-dtype">{df.dtypes[c]}</span>
+                        ) : null}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -134,7 +139,12 @@ function OutputPreviewInner({
                     <thead>
                       <tr>
                         {df.columns.map((c) => (
-                          <th key={c}>{c}</th>
+                          <th key={c}>
+                            {c}
+                            {df.dtypes?.[c] ? (
+                              <span className="nf-col-dtype">{df.dtypes[c]}</span>
+                            ) : null}
+                          </th>
                         ))}
                       </tr>
                     </thead>

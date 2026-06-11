@@ -48,6 +48,30 @@ def topological_sort(nodes: list[WorkflowNode], edges: list[WorkflowEdge]) -> li
     return order
 
 
+def _handle_index(handle: str | None) -> int:
+    """Port order: df_in → 1, df_in_2 → 2, df_in_3 → 3, …"""
+    h = handle or "df_in"
+    if h == "df_in":
+        return 1
+    if h.startswith("df_in_"):
+        try:
+            return int(h.rsplit("_", 1)[1])
+        except ValueError:
+            return 1
+    return 1
+
+
+def _upstream_sources(node_id: str, edges: list[WorkflowEdge]) -> list[tuple[int, str]]:
+    """All incoming (port_index, source_id) pairs for a node, sorted by port."""
+    ins = [
+        (_handle_index(e.targetHandle), e.source)
+        for e in edges
+        if e.target == node_id
+    ]
+    ins.sort(key=lambda t: t[0])
+    return ins
+
+
 def _upstream_source_id(node_id: str, edges: list[WorkflowEdge]) -> str | None:
     for e in edges:
         if e.target == node_id and (e.targetHandle or "df_in") == "df_in":
@@ -161,6 +185,39 @@ def _preview_records(df: pd.DataFrame, limit: int = 20) -> list[dict[str, Any]]:
     return rows
 
 
+def _friendly_dtype(dtype: Any) -> str:
+    """Pandas dtype → user-facing type name shown in table headers."""
+    s = str(dtype)
+    low = s.lower()
+    if "geometry" in low:
+        return "geometry"
+    if "datetime" in low:
+        return "datetime"
+    if "timedelta" in low:
+        return "duration"
+    if "int" in low:
+        return "integer"
+    if "float" in low:
+        return "float"
+    if "bool" in low:
+        return "boolean"
+    if "category" in low:
+        return "category"
+    if low in ("object", "string", "str"):
+        return "string"
+    return s
+
+
+def _column_dtypes(df: pd.DataFrame) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for col in df.columns:
+        try:
+            out[str(col)] = _friendly_dtype(df[col].dtype)
+        except Exception:
+            out[str(col)] = "unknown"
+    return out
+
+
 def _file_stat_tokens(params: dict[str, Any]) -> list[str]:
     """File-typed params contribute mtime+size so editing an input file invalidates the cache."""
     tokens: list[str] = []
@@ -231,17 +288,27 @@ def run_workflow(
         spec = get_spec_by_type(node.type)
         label = node.label or (spec.label if spec else node.type)
 
-        upstream_id = _upstream_source_id(nid, edges)
-        df_in: pd.DataFrame | None = None
-        if upstream_id:
-            df_in = store.get_df_for_node(upstream_id)
-            if df_in is not None:
-                # Shallow copy (cheap under copy-on-write) shields cached
-                # upstream results from in-place mutation by node code.
-                df_in = df_in.copy(deep=False)
+        sources = _upstream_sources(nid, edges)
+
+        def _df_for(source_id: str) -> pd.DataFrame | None:
+            df = store.get_df_for_node(source_id)
+            # Shallow copy (cheap under copy-on-write) shields cached
+            # upstream results from in-place mutation by node code.
+            return df.copy(deep=False) if df is not None else None
+
+        # Port-indexed inputs: gaps (unconnected middle ports) stay None.
+        max_port = max((idx for idx, _ in sources), default=0)
+        port_dfs: list[pd.DataFrame | None] = [None] * max(1, max_port)
+        for idx, source_id in sources:
+            port_dfs[idx - 1] = _df_for(source_id)
+        df_in = port_dfs[0]
+        extra_inputs = port_dfs[1:]
 
         params = dict(node.params)
-        fingerprint = node_fingerprint(node, fingerprints.get(upstream_id or ""))
+        upstream_fp = "|".join(
+            f"{idx}:{fingerprints.get(source_id, '')}" for idx, source_id in sources
+        )
+        fingerprint = node_fingerprint(node, upstream_fp or None)
         fingerprints[nid] = fingerprint
 
         from_cache = False
@@ -253,7 +320,7 @@ def run_workflow(
             cached_count += 1
         else:
             try:
-                df_out, html_out = execute_node_code(node.code, df_in, params)
+                df_out, html_out = execute_node_code(node.code, df_in, params, extra_inputs)
             except Exception as exc:  # noqa: BLE001 - intentional (user-supplied code)
                 return (
                     "error",
@@ -281,6 +348,7 @@ def run_workflow(
                 "type": "DataFrame",
                 "rows": int(len(df_out)),
                 "columns": list(df_out.columns.astype(str)),
+                "dtypes": _column_dtypes(df_out),
                 "preview": _preview_records(df_out),
             }
 

@@ -141,12 +141,15 @@ import pandas as pd
 left_on = params.get("left_on")
 right_on = params.get("right_on") or left_on
 how = params.get("how", "inner")
-right_path = params.get("right_file_path")
-if not right_path:
-    raise ValueError("Provide right_file_path (path to the second CSV to join).")
+if df_in_2 is not None:
+    df_right = df_in_2
+else:
+    right_path = params.get("right_file_path")
+    if not right_path:
+        raise ValueError("Connect a second input table (right port) or set right_file_path.")
+    df_right = pd.read_csv(right_path)
 if not left_on:
     raise ValueError("Provide left_on (join key column).")
-df_right = pd.read_csv(right_path)
 df_out = df_in.merge(df_right, left_on=left_on, right_on=right_on, how=how)
 """
 
@@ -212,10 +215,17 @@ GEO_SJOIN_CODE = """\
 import geopandas as gpd
 how = params.get("how", "left")
 predicate = params.get("predicate", "intersects")
-right_path = params.get("right_file_path")
-if not right_path:
-    raise ValueError("Provide right_file_path (path to the overlay GeoFile).")
-gdf_right = gpd.read_file(right_path)
+if df_in_2 is not None:
+    gdf_right = df_in_2
+else:
+    right_path = params.get("right_file_path")
+    if not right_path:
+        raise ValueError("Connect a second input layer (right port) or set right_file_path.")
+    gdf_right = gpd.read_file(right_path)
+if not isinstance(gdf_right, gpd.GeoDataFrame):
+    raise ValueError("Second input must be a GeoDataFrame (use GeoFile Reader).")
+if df_in.crs and gdf_right.crs and df_in.crs != gdf_right.crs:
+    gdf_right = gdf_right.to_crs(df_in.crs)
 df_out = gpd.sjoin(df_in, gdf_right, how=how, predicate=predicate)
 """
 
@@ -264,20 +274,93 @@ df_out = gpd.clip(df_in, mask)
 
 GEOMAP_CODE = """\
 import folium
-if df_in is None:
-    raise ValueError("GeoMap requires df_in from upstream GeoFile Reader.")
-if "geometry" not in df_in.columns:
-    raise ValueError("Input does not contain a geometry column.")
 tiles = params.get("tiles", "OpenStreetMap")
 zoom_start = int(params.get("zoom_start", 4))
-gdf = df_in[df_in.geometry.notnull()].copy()
-if gdf.empty:
-    raise ValueError("No valid geometries found.")
-centroid = gdf.geometry.to_crs(epsg=4326).centroid
+layer_colors = ["#1976d2", "#e53935", "#2e7d32", "#f9a825", "#8e24aa",
+                "#00838f", "#6d4c41", "#c2185b"]
+layers = []
+for i, gdf in enumerate(df_ins):
+    if gdf is None:
+        continue
+    if "geometry" not in gdf.columns:
+        raise ValueError(f"Input {i + 1} does not contain a geometry column.")
+    layer = gdf[gdf.geometry.notnull()].copy()
+    if layer.empty:
+        continue
+    layers.append((i, layer))
+if not layers:
+    raise ValueError("GeoMap requires at least one connected GeoDataFrame input.")
+first = layers[0][1]
+centroid = first.geometry.to_crs(epsg=4326).centroid
 m = folium.Map(location=[float(centroid.y.mean()), float(centroid.x.mean())],
                zoom_start=zoom_start, tiles=tiles)
-folium.GeoJson(gdf.__geo_interface__).add_to(m)
+# Inputs are drawn bottom-to-top: port 1 is the bottom layer.
+for i, layer in layers:
+    color = layer_colors[i % len(layer_colors)]
+    folium.GeoJson(
+        layer.to_crs(epsg=4326).__geo_interface__ if layer.crs else layer.__geo_interface__,
+        name=f"Layer {i + 1}",
+        style_function=lambda _f, c=color: {
+            "color": c, "fillColor": c, "weight": 2, "fillOpacity": 0.35,
+        },
+    ).add_to(m)
+folium.LayerControl().add_to(m)
 html_out = m.get_root().render()
+"""
+
+GEO_VIEW_CODE = """\
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+title = params.get("title", "")
+dpi = int(params.get("dpi", 200))
+cmap = params.get("cmap", "viridis")
+color_col = params.get("color_column") or None
+save_path = params.get("save_path") or None
+layer_colors = ["#1976d2", "#e53935", "#2e7d32", "#f9a825", "#8e24aa",
+                "#00838f", "#6d4c41", "#c2185b"]
+layers = []
+crs = None
+for i, gdf in enumerate(df_ins):
+    if gdf is None:
+        continue
+    if "geometry" not in gdf.columns:
+        raise ValueError(f"Input {i + 1} does not contain a geometry column.")
+    layer = gdf[gdf.geometry.notnull()].copy()
+    if layer.empty:
+        continue
+    if crs is None and layer.crs is not None:
+        crs = layer.crs
+    elif crs is not None and layer.crs is not None and layer.crs != crs:
+        layer = layer.to_crs(crs)
+    layers.append((i, layer))
+if not layers:
+    raise ValueError("GeoView requires at least one connected GeoDataFrame input.")
+fig, ax = plt.subplots(figsize=(10, 8), dpi=dpi)
+# Inputs are drawn bottom-to-top: port 1 is the bottom layer.
+for i, layer in layers:
+    if color_col and color_col in layer.columns:
+        layer.plot(ax=ax, column=color_col, cmap=cmap, legend=True,
+                   edgecolor="#333", linewidth=0.4)
+    else:
+        layer.plot(ax=ax, color=layer_colors[i % len(layer_colors)],
+                   edgecolor="#333", linewidth=0.4, alpha=0.75)
+ax.set_axis_off()
+if title:
+    ax.set_title(title, fontsize=13, fontweight="bold")
+plt.tight_layout()
+import io, base64, pathlib
+buf = io.BytesIO()
+fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
+if save_path:
+    p = pathlib.Path(save_path)
+    if p.suffix.lower() != ".png":
+        p = p.with_suffix(".png")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(buf.getvalue())
+plt.close(fig)
+html_out = ('<img src="data:image/png;base64,' +
+            base64.b64encode(buf.getvalue()).decode() +
+            '" style="max-width:100%;height:auto;" />')
 """
 
 # ─── Visualization (Plotly) ───────────────────────────────────────────────────
@@ -590,11 +673,12 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="join_tables", name="join_tables", label="Join Tables", category="Transform", color="#fbc02d",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"df_out": {"type": "DataFrame"}},
+        inputs={"df_in": {"type": "DataFrame", "label": "left"}, "df_in_2": {"type": "DataFrame", "label": "right"}},
+        outputs={"df_out": {"type": "DataFrame"}},
         parameters=[
             _ps("left_on", "column", required=True),
             _ps("right_on", "string", default=""),
-            _ps("right_file_path", "file", required=True),
+            _ps("right_file_path", "file"),
             _ps("how", "enum", default="inner", options=["inner", "left", "right", "outer"]),
         ],
         default_params={"left_on": None, "right_on": "", "right_file_path": None, "how": "inner"},
@@ -657,9 +741,10 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="geo_spatial_join", name="geo_spatial_join", label="Spatial Join", category="GIS", color="#26a69a",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"df_out": {"type": "DataFrame"}},
+        inputs={"df_in": {"type": "DataFrame", "label": "left"}, "df_in_2": {"type": "DataFrame", "label": "right"}},
+        outputs={"df_out": {"type": "DataFrame"}},
         parameters=[
-            _ps("right_file_path", "file", required=True),
+            _ps("right_file_path", "file"),
             _ps("how", "enum", default="left", options=["left", "inner", "right"]),
             _ps("predicate", "enum", default="intersects",
                 options=["intersects", "within", "contains", "overlaps", "touches", "crosses"]),
@@ -749,7 +834,9 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="geomap", name="geomap", label="GeoMap", category="Visualization", color="#42a5f5",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}},
+        inputs={"df_in": {"type": "DataFrame", "label": "layer 1"}},
+        outputs={"html_out": {"type": "HTML"}},
+        dynamic_inputs=True,
         parameters=[
             _ps("tiles", "enum", default="OpenStreetMap",
                 options=["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter"]),
@@ -757,6 +844,22 @@ NODE_SPECS: list[NodeSpec] = [
         ],
         default_params={"tiles": "OpenStreetMap", "zoom_start": 4},
         default_code=GEOMAP_CODE,
+    ),
+    NodeSpec(
+        id="geo_view", name="geo_view", label="GeoView (PNG)", category="Visualization", color="#42a5f5",
+        inputs={"df_in": {"type": "DataFrame", "label": "layer 1"}},
+        outputs={"html_out": {"type": "HTML"}},
+        dynamic_inputs=True,
+        parameters=[
+            _ps("title", "string", default=""),
+            _ps("color_column", "column", default=""),
+            _ps("cmap", "enum", default="viridis",
+                options=["viridis", "plasma", "coolwarm", "YlOrRd", "Blues", "Greens"]),
+            _ps("dpi", "number", default=200),
+            _ps("save_path", "string", default=""),
+        ],
+        default_params={"title": "", "color_column": "", "cmap": "viridis", "dpi": 200, "save_path": ""},
+        default_code=GEO_VIEW_CODE,
     ),
 
     # ── Nature View ───────────────────────────────────────────────────────────
@@ -829,6 +932,140 @@ NODE_SPECS: list[NodeSpec] = [
         default_code=PYTHON_SCRIPT_HTML_CODE,
     ),
 ]
+
+# ─── Node descriptions (markdown, shown in the Info tab) ────────────────────
+
+_DESCRIPTIONS: dict[str, str] = {
+    "read_csv": (
+        "Reads a **CSV file** into a DataFrame.\n\n"
+        "- `file_path`: path to the .csv file (upload supported)\n"
+        "- `delimiter`: field separator (default `,`)\n"
+        "- `encoding`: text encoding (default `utf-8`)"
+    ),
+    "read_excel": (
+        "Reads an **Excel workbook** (.xlsx / .xls) into a DataFrame.\n\n"
+        "- `sheet`: sheet index (`0`) or sheet name\n\n"
+        "Requires `openpyxl`."
+    ),
+    "read_json": (
+        "Reads a **JSON or GeoJSON** file.\n\n"
+        "GeoJSON is loaded with *geopandas* (geometry preserved); "
+        "plain JSON falls back to `pandas.read_json`."
+    ),
+    "read_parquet": "Reads a **Parquet** file into a DataFrame — fast columnar format.",
+    "geofile_reader": (
+        "Reads a **geospatial file** into a GeoDataFrame.\n\n"
+        "Supports Shapefile (.shp / zipped), GeoJSON, GeoPackage, and more via GDAL.\n\n"
+        "- `layer`: layer name for multi-layer sources (e.g. GeoPackage)"
+    ),
+    "column_filter": "Keeps only the **selected columns** — like KNIME *Column Filter*.",
+    "row_filter": (
+        "Filters rows by a **condition** on one column.\n\n"
+        "Operators: `>` `>=` `<` `<=` `==` `!=` `contains` (string match)."
+    ),
+    "groupby": (
+        "**Groups rows** by a column and aggregates a target column.\n\n"
+        "Aggregations: `sum`, `mean`, `median`, `min`, `max`, `count`."
+    ),
+    "sort_rows": "Sorts rows by a column, ascending or descending.",
+    "join_tables": (
+        "**Joins two tables** on key columns — like SQL JOIN.\n\n"
+        "**Inputs**: left table (top port), right table (bottom port).\n"
+        "If the right port is unconnected, `right_file_path` is read as CSV.\n\n"
+        "- `how`: `inner` / `left` / `right` / `outer`"
+    ),
+    "rename_columns": (
+        "Renames columns using a **JSON mapping**, e.g.\n\n"
+        "```json\n{\"old_name\": \"new_name\"}\n```"
+    ),
+    "formula_column": (
+        "Adds a **computed column** using a pandas `eval` expression.\n\n"
+        "Example: `pop_density = population / area_km2` → expression `population / area_km2`."
+    ),
+    "table_statistics": "Computes **summary statistics** (count, mean, std, min, max, …) for every column.",
+    "drop_duplicates": (
+        "Removes **duplicate rows**.\n\n"
+        "- `subset`: comma-separated columns to compare (empty = all columns)\n"
+        "- `keep`: `first` / `last` / `false` (drop all duplicates)"
+    ),
+    "geo_buffer": (
+        "Creates a **buffer** around each geometry.\n\n"
+        "- `distance`: buffer radius in **meters**\n\n"
+        "Geographic CRS inputs are projected to EPSG:3857 for the buffer, then projected back."
+    ),
+    "geo_dissolve": (
+        "**Merges geometries** into one (or one per group) — like KNIME/QGIS *Dissolve*.\n\n"
+        "- `by_column`: group key (empty = dissolve everything)\n"
+        "- `agg_column` + `agg_func`: optional attribute aggregation"
+    ),
+    "geo_spatial_join": (
+        "**Spatial join** of two layers by geometric relationship.\n\n"
+        "**Inputs**: left layer (top port), right layer (bottom port).\n"
+        "If the right port is unconnected, `right_file_path` is loaded.\n"
+        "CRS mismatches are reprojected automatically.\n\n"
+        "- `predicate`: `intersects` / `within` / `contains` / `overlaps` / `touches` / `crosses`"
+    ),
+    "geo_crs_transform": (
+        "**Reprojects** the layer to a target CRS.\n\n"
+        "- `target_crs`: e.g. `EPSG:4326` (WGS84), `EPSG:3857` (Web Mercator)"
+    ),
+    "geo_centroid": "Replaces each geometry with its **centroid point**.",
+    "geo_area_length": (
+        "Computes **area (m²)** or **length (m)** per feature into a new column.\n\n"
+        "Geographic inputs are measured in EPSG:3857."
+    ),
+    "geo_convex_hull": "Replaces each geometry with its **convex hull**.",
+    "geo_clip": (
+        "**Clips** the input layer to a mask boundary.\n\n"
+        "- `mask_file_path`: GeoFile whose union is the clip boundary"
+    ),
+    "histogram": "Interactive **histogram** (Plotly) of one numeric column.",
+    "scatter_plot": "Interactive **scatter plot** (Plotly). Optional `color_column` for grouping.",
+    "bar_chart": "Interactive **bar chart** (Plotly).",
+    "line_chart": "Interactive **line chart** (Plotly).",
+    "geomap": (
+        "Interactive **web map** (folium / Leaflet) of one or more layers.\n\n"
+        "**Dynamic inputs**: select the node and use **+ / −** to add or remove "
+        "layer ports. Layers draw **bottom-to-top** (port 1 at the bottom). "
+        "Each layer gets its own color and a layer-control toggle."
+    ),
+    "geo_view": (
+        "**Static PNG map** of one or more layers — for large, publication-ready output.\n\n"
+        "**Dynamic inputs**: + / − to add or remove layer ports; layers draw "
+        "**bottom-to-top**.\n\n"
+        "- `color_column`: choropleth column (uses `cmap`)\n"
+        "- `dpi`: output resolution\n"
+        "- `save_path`: optional path to also **save the PNG to your workspace**"
+    ),
+    "nature_boxplot": (
+        "**Box plot** in Nature journal style (matplotlib + seaborn, static PNG).\n\n"
+        "- `palette`: colorblind-safe schemes available"
+    ),
+    "nature_violin": "**Violin plot** in Nature journal style (static PNG).",
+    "nature_heatmap": (
+        "**Heatmap** in Nature journal style.\n\n"
+        "With `x/y/value` columns set: pivot-table heatmap. "
+        "Otherwise: correlation matrix of numeric columns."
+    ),
+    "nature_ridgeplot": (
+        "**Ridge plot** (stacked density curves per group) in Nature journal style.\n\n"
+        "- `group_column`: one ridge per group value\n"
+        "- `value_column`: numeric distribution"
+    ),
+    "python_script_data": (
+        "**Free-form Python** node producing a DataFrame.\n\n"
+        "Variables available: `df_in` (upstream DataFrame or None), `params` (dict), "
+        "`df_ins` (all inputs). Set `df_out` for downstream nodes."
+    ),
+    "python_script_html": (
+        "**Free-form Python** node producing an HTML view.\n\n"
+        "Set `html_out` to any HTML string — plotly `fig.to_html()`, folium "
+        "`m.get_root().render()`, or a base64 `<img>`."
+    ),
+}
+
+for _spec in NODE_SPECS:
+    _spec.description = _DESCRIPTIONS.get(_spec.id, _spec.description)
 
 # Alias kept for backward compatibility
 DEFAULT_NODE_SPECS = NODE_SPECS

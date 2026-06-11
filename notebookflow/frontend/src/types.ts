@@ -19,6 +19,8 @@ export interface NodeSpec {
   parameters: ParameterSpec[];
   default_params: Record<string, unknown>;
   default_code: string;
+  description?: string;
+  dynamic_inputs?: boolean;
   temporary?: boolean;
   provenance?: Record<string, unknown> | null;
 }
@@ -31,6 +33,7 @@ export interface WorkflowNodePayload {
   position?: { x: number; y: number };
   params: Record<string, unknown>;
   code: string;
+  input_count?: number;
 }
 
 export interface WorkflowEdgePayload {
@@ -45,6 +48,7 @@ export interface DataFrameOutputSummary {
   type: "DataFrame";
   rows: number;
   columns: string[];
+  dtypes?: Record<string, string>;
   preview: Record<string, unknown>[];
 }
 
@@ -166,6 +170,8 @@ export interface GISImportResponse {
 }
 
 export interface FlowNodeData {
+  /** Index signature so Node<FlowNodeData> satisfies xyflow's Record constraint. */
+  [key: string]: unknown;
   label: string;
   type: string;
   category: string;
@@ -175,4 +181,13 @@ export interface FlowNodeData {
   color: string;
   showInput: boolean;
   outputHandle: "df_out" | "html_out";
+  /** Number of input ports (1 = just df_in, 2 = df_in + df_in_2, …) */
+  inputCount?: number;
+  /** User may add/remove input ports via +/− on the node */
+  dynamicInputs?: boolean;
+}
+
+/** Port handle id for the n-th input (1-based): df_in, df_in_2, df_in_3, … */
+export function inputHandleId(index: number): string {
+  return index <= 1 ? "df_in" : `df_in_${index}`;
 }

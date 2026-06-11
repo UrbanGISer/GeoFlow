@@ -1,14 +1,15 @@
 import { useState } from "react";
 import type { NodeSpec } from "../types";
+import { Markdown } from "./Markdown";
 import { NodeLibrary } from "./NodeLibrary";
+import { WorkspacePanel } from "./WorkspacePanel";
 
-type LeftTab = "nodes" | "info" | "files";
+type LeftTab = "nodes" | "info" | "workspace";
 
 interface LeftPanelProps {
   specs: NodeSpec[];
   onAdd: (spec: NodeSpec) => void;
   selectedSpec?: NodeSpec | null;
-  recentFiles?: string[];
 }
 
 function InfoTab({ spec }: { spec?: NodeSpec | null }) {
@@ -27,6 +28,11 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
         <div className="nf-info-label">{spec.label}</div>
         <div className="nf-info-category">{spec.category}</div>
       </div>
+      {spec.description ? (
+        <div className="nf-info-section nf-info-desc">
+          <Markdown source={spec.description} />
+        </div>
+      ) : null}
       <div className="nf-info-section">
         <h4 className="nf-info-h4">Inputs</h4>
         {Object.keys(spec.inputs).length === 0 ? (
@@ -34,8 +40,14 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
         ) : (
           <ul className="nf-info-port-list">
             {Object.entries(spec.inputs).map(([k, v]) => (
-              <li key={k}><code>{k}</code>: {(v as { type?: string })?.type ?? "any"}</li>
+              <li key={k}>
+                <code>{k}</code>: {(v as { type?: string })?.type ?? "any"}
+                {(v as { label?: string })?.label ? ` — ${(v as { label: string }).label}` : ""}
+              </li>
             ))}
+            {spec.dynamic_inputs ? (
+              <li className="nf-muted">+ more ports via the node’s +/− buttons</li>
+            ) : null}
           </ul>
         )}
       </div>
@@ -60,7 +72,7 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
                 <span className="nf-info-param-name">{p.name}</span>
                 <span className="nf-info-param-type"> ({p.type})</span>
                 {p.required ? <span className="nf-required"> *</span> : null}
-                {p.default !== undefined && p.default !== null ? (
+                {p.default !== undefined && p.default !== null && p.default !== "" ? (
                   <span className="nf-muted"> — default: {String(p.default)}</span>
                 ) : null}
               </li>
@@ -72,39 +84,17 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
   );
 }
 
-function FilesTab({ recentFiles }: { recentFiles?: string[] }) {
-  return (
-    <div className="nf-left-tab-body" style={{ overflowY: "auto", padding: "12px" }}>
-      <p className="nf-muted" style={{ marginBottom: 12 }}>
-        Recent uploads (session only):
-      </p>
-      {recentFiles && recentFiles.length > 0 ? (
-        <ul className="nf-info-port-list">
-          {recentFiles.map((f, i) => (
-            <li key={i} title={f} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <code>{f.split(/[/\\]/).pop()}</code>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="nf-muted" style={{ fontSize: 12 }}>
-          No files uploaded yet. Use a Read CSV / GeoFile Reader node and upload a file via its parameter editor.
-        </p>
-      )}
-    </div>
-  );
-}
-
-export function LeftPanel({ specs, onAdd, selectedSpec, recentFiles }: LeftPanelProps) {
+export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<LeftTab>("nodes");
-  const [hoveredSpec, setHoveredSpec] = useState<NodeSpec | null>(null);
+  const [librarySpec, setLibrarySpec] = useState<NodeSpec | null>(null);
 
-  const displaySpec = hoveredSpec ?? selectedSpec;
+  // Canvas selection wins; otherwise last library click.
+  const displaySpec = selectedSpec ?? librarySpec;
 
   const tabs: Array<{ id: LeftTab; label: string }> = [
     { id: "nodes", label: "Nodes" },
     { id: "info", label: "Info" },
-    { id: "files", label: "Files" },
+    { id: "workspace", label: "Workspace" },
   ];
 
   return (
@@ -126,16 +116,12 @@ export function LeftPanel({ specs, onAdd, selectedSpec, recentFiles }: LeftPanel
           <NodeLibrary
             specs={specs}
             onAdd={onAdd}
-            selectedSpecId={selectedSpec?.id}
-            onSelectSpec={(spec) => setHoveredSpec(spec)}
+            selectedSpecId={displaySpec?.id}
+            onSelectSpec={(spec) => setLibrarySpec(spec)}
           />
         ) : null}
-        {activeTab === "info" ? (
-          <InfoTab spec={displaySpec} />
-        ) : null}
-        {activeTab === "files" ? (
-          <FilesTab recentFiles={recentFiles} />
-        ) : null}
+        {activeTab === "info" ? <InfoTab spec={displaySpec} /> : null}
+        {activeTab === "workspace" ? <WorkspacePanel /> : null}
       </div>
     </div>
   );

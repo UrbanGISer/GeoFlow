@@ -213,6 +213,53 @@ export async function importGISLibrary(payload: { articles: GISArticleInput[] })
   return parseJson(res);
 }
 
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  mtime: number;
+}
+
+export interface WorkspaceListing {
+  path: string;
+  parent: string | null;
+  entries: WorkspaceEntry[];
+}
+
+export async function workspaceList(path?: string | null): Promise<WorkspaceListing> {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+  const res = await fetch(`${API_PREFIX}/workspace/list${qs}`);
+  return parseJsonWithHttpError<WorkspaceListing>(res, "Workspace list");
+}
+
+export async function workspaceMkdir(parent: string | null, name: string): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/mkdir`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent, name }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Create folder");
+}
+
+export async function workspaceCreateFile(parent: string | null, name: string): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/create-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent, name, content: "" }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Create file");
+}
+
+export async function workspaceDelete(path: string): Promise<{ deleted: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  return parseJsonWithHttpError<{ deleted: string }>(res, "Delete");
+}
+
 export function artifactUrl(path: string): string {
   if (path.startsWith("http")) return path;
   const rel = path.startsWith("/") ? path : `/${path}`;

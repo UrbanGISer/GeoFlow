@@ -190,6 +190,49 @@ def test_notebook_read_csv_param_extraction() -> None:
     print("ok: read_csv cell maps to builtin node with extracted file_path and runs")
 
 
+def test_multi_input_ports() -> None:
+    """Two-input join via df_in_2 port + df_ins list ordering + cache invalidation per port."""
+    nodes = [
+        WorkflowNode(id="L", type="custom", label="Left",
+                     code="df_out = pd.DataFrame({'k': [1, 2, 3], 'a': [10, 20, 30]})"),
+        WorkflowNode(id="R", type="custom", label="Right",
+                     code="df_out = pd.DataFrame({'k': [1, 2], 'b': ['x', 'y']})"),
+        WorkflowNode(id="J", type="custom", label="Join",
+                     code="df_out = df_in.merge(df_in_2, on='k', how='inner')"),
+        WorkflowNode(id="N", type="custom", label="CountInputs",
+                     code="df_out = pd.DataFrame({'n': [sum(1 for d in df_ins if d is not None)]})"),
+    ]
+    edges = [
+        WorkflowEdge(id="e1", source="L", target="J", targetHandle="df_in"),
+        WorkflowEdge(id="e2", source="R", target="J", targetHandle="df_in_2"),
+        WorkflowEdge(id="e3", source="L", target="N", targetHandle="df_in"),
+        WorkflowEdge(id="e4", source="R", target="N", targetHandle="df_in_2"),
+        WorkflowEdge(id="e5", source="J", target="N", targetHandle="df_in_3"),
+    ]
+    store = DataStore()
+    cache = ResultCache()
+    status, outputs, logs, err_id, msg = run_workflow(
+        nodes, edges, store, Path(tempfile.mkdtemp()), cache=cache
+    )
+    assert status == "success", f"{err_id}: {msg}"
+    joined = store.get_df_for_node("J")
+    assert joined is not None and len(joined) == 2 and list(joined.columns) == ["k", "a", "b"]
+    counted = store.get_df_for_node("N")
+    assert counted is not None and counted.iloc[0]["n"] == 3
+    assert outputs["J"]["df_out"]["dtypes"]["b"] == "string"
+
+    # Changing only the second-port upstream must invalidate the join cache.
+    nodes[1].code = "df_out = pd.DataFrame({'k': [1, 2, 3], 'b': ['x', 'y', 'z']})"
+    status, outputs, _, _, _ = run_workflow(
+        nodes, edges, store, Path(tempfile.mkdtemp()), cache=cache
+    )
+    assert status == "success"
+    assert outputs["J"]["cached"] is False
+    joined = store.get_df_for_node("J")
+    assert joined is not None and len(joined) == 3
+    print("ok: multi-input ports (df_in_2/df_in_3, df_ins, per-port cache invalidation)")
+
+
 if __name__ == "__main__":
     test_engine_cache()
     test_cache_mutation_safety()
@@ -198,4 +241,5 @@ if __name__ == "__main__":
     test_temp_node_code_safety()
     test_notebook_standardizer_dataflow()
     test_notebook_read_csv_param_extraction()
+    test_multi_input_ports()
     print("\nAll smoke tests passed.")

@@ -35,12 +35,16 @@ function newNodeId(): string {
   return `node_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function flowExtras(spec: NodeSpec): Pick<FlowNodeData, "showInput" | "outputHandle"> {
-  const noInputs = Object.keys(spec.inputs).length === 0;
+function flowExtras(
+  spec: NodeSpec,
+): Pick<FlowNodeData, "showInput" | "outputHandle" | "inputCount" | "dynamicInputs"> {
+  const inputCount = Object.keys(spec.inputs).length;
   const hasHtml = Object.keys(spec.outputs).includes("html_out");
   return {
-    showInput: !noInputs,
+    showInput: inputCount > 0,
     outputHandle: hasHtml ? "html_out" : "df_out",
+    inputCount: Math.max(1, inputCount),
+    dynamicInputs: Boolean(spec.dynamic_inputs),
   };
 }
 
@@ -57,6 +61,7 @@ function buildPayload(nodes: Node<FlowNodeData>[], edges: Edge[]): {
       position: { x: n.position.x, y: n.position.y },
       params: n.data.params,
       code: n.data.code,
+      input_count: n.data.inputCount,
     })),
     edges: edges.map((e) => ({
       id: e.id,
@@ -91,7 +96,6 @@ export default function App() {
   const [nodeCreatorOpen, setNodeCreatorOpen] = useState(false);
   const [composeResult, setComposeResult] = useState<ComposeWorkflowResponse | null>(null);
   const [aiStudioOpen, setAiStudioOpen] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
 
   const specById = useMemo(() => {
@@ -221,6 +225,32 @@ export default function App() {
     [specById, buildNode],
   );
 
+  const handleAddInputPort = useCallback((nodeId: string) => {
+    setNodes((ns) =>
+      ns.map((n) =>
+        n.id === nodeId && n.data.dynamicInputs
+          ? { ...n, data: { ...n.data, inputCount: Math.max(1, n.data.inputCount ?? 1) + 1 } }
+          : n,
+      ),
+    );
+  }, []);
+
+  const handleRemoveInputPort = useCallback((nodeId: string) => {
+    setNodes((ns) => {
+      const node = ns.find((n) => n.id === nodeId);
+      if (!node || !node.data.dynamicInputs) return ns;
+      const count = Math.max(1, node.data.inputCount ?? 1);
+      if (count <= 1) return ns; // last port cannot be removed
+      const removedHandle = count === 2 ? "df_in_2" : `df_in_${count}`;
+      setEdges((es) =>
+        es.filter((e) => !(e.target === nodeId && e.targetHandle === removedHandle)),
+      );
+      return ns.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, inputCount: count - 1 } } : n,
+      );
+    });
+  }, []);
+
   const handleRunWorkflow = async () => {
     setWorkflowError(null);
     setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: "running" as const } })));
@@ -287,6 +317,9 @@ export default function App() {
           };
         }
         const extras = flowExtras(spec);
+        if (sn.input_count && sn.input_count > (extras.inputCount ?? 1)) {
+          extras.inputCount = sn.input_count;
+        }
         return {
           id: sn.id, type: "notebook", position: sn.position,
           data: {
@@ -310,7 +343,12 @@ export default function App() {
     (wf: { nodes: WorkflowNodePayload[]; edges: WorkflowEdgePayload[] }) => {
       const nextNodes: Node<FlowNodeData>[] = wf.nodes.map((sn, i) => {
         const spec = specs.find((s) => s.id === sn.type);
-        const extras = spec ? flowExtras(spec) : { showInput: true, outputHandle: "df_out" as const };
+        const extras = spec
+          ? flowExtras(spec)
+          : { showInput: true, outputHandle: "df_out" as const, inputCount: 1, dynamicInputs: false };
+        if (sn.input_count && sn.input_count > (extras.inputCount ?? 1)) {
+          extras.inputCount = sn.input_count;
+        }
         return {
           id: sn.id || `node_${i + 1}`, type: "notebook",
           position: sn.position ?? { x: 100 + i * 180, y: 140 },
@@ -429,12 +467,6 @@ export default function App() {
     }
   };
 
-  // Track uploaded file paths from ParameterEditor upload events
-  const handleRecentFile = useCallback((filePath: string) => {
-    setRecentFiles((prev) => [...new Set([filePath, ...prev])].slice(0, 20));
-  }, []);
-  void handleRecentFile; // available for future use
-
   return (
     <div className="nf-app">
       <header className="nf-toolbar">
@@ -486,7 +518,6 @@ export default function App() {
                   specs={specs}
                   onAdd={handleAddNode}
                   selectedSpec={selectedNode ? specById[selectedNode.data.type] : selectedSpec}
-                  recentFiles={recentFiles}
                 />
               </div>
             </Panel>
@@ -503,6 +534,8 @@ export default function App() {
                   onNodeDoubleClick={(_e: MouseEvent, node) => setModalNodeId(node.id)}
                   onNodeClick={(_e: MouseEvent, node) => handleSelectNode(node.id)}
                   onDropSpec={handleDropSpec}
+                  onAddInput={handleAddInputPort}
+                  onRemoveInput={handleRemoveInputPort}
                 />
               </div>
             </Panel>

@@ -48,6 +48,15 @@ def _score(step: PlanStep, spec: NodeSpec) -> float:
     overlap = len(step_tokens & spec_tokens)
     union = len(step_tokens | spec_tokens) or 1
     score += 0.2 * overlap / union
+    # Compound-token credit: "file" ⊂ "geofile", "plot" ⊂ "boxplot" — exact
+    # token overlap misses these, so near-ties resolve to the wrong node.
+    partial = sum(
+        1
+        for a in step_tokens
+        for b in spec_tokens
+        if a != b and len(a) >= 3 and len(b) >= 3 and (a in b or b in a)
+    )
+    score += 0.1 * min(partial, 3) / 3
 
     # IO-contract compatibility.
     has_df_in = "df_in" in spec.inputs

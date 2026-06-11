@@ -34,6 +34,7 @@ from app.models import (
     WorkflowPlanResponse,
 )
 from app.registry import add_gis_specs, add_temporary_specs, list_all_dynamic_specs
+from app.services import workspace as ws
 from app.services.cwl_exporter import export_cwl
 from app.services.gis_ingest import ingest_articles_to_specs
 from app.services.node_generator import generate_node
@@ -271,3 +272,42 @@ def node_generate_endpoint(payload: NodeGenerateRequest) -> NodeGenerateResponse
 def export_cwl_endpoint(payload: CWLExportRequest) -> dict:
     """Export the current workflow as a CWL v1.2 Workflow stub (interface reservation)."""
     return export_cwl(payload.nodes, payload.edges)
+
+
+# ── Workspace file browser ────────────────────────────────────────────────────
+
+def _ws_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/api/workspace/list")
+def workspace_list(path: str | None = None) -> dict:
+    """List a folder. No path → default workspace folder."""
+    return _ws_call(ws.list_dir, path)
+
+
+@app.post("/api/workspace/mkdir")
+def workspace_mkdir(payload: dict) -> dict:
+    return _ws_call(ws.make_dir, payload.get("parent"), payload.get("name", ""))
+
+
+@app.post("/api/workspace/create-file")
+def workspace_create_file(payload: dict) -> dict:
+    return _ws_call(
+        ws.create_file,
+        payload.get("parent"),
+        payload.get("name", ""),
+        payload.get("content", ""),
+    )
+
+
+@app.post("/api/workspace/delete")
+def workspace_delete(payload: dict) -> dict:
+    return _ws_call(ws.delete_path, payload.get("path", ""))
