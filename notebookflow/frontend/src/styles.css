@@ -1215,13 +1215,17 @@ body,
   border-radius: 0;
 }
 
+/* React Flow's default handle transform shifts ±50% of the width outward —
+   suppress the X shift so the triangle's flat edge sits flush on the node. */
 .nf-handle-in.react-flow__handle-left {
   left: -10px;
+  transform: translate(0, -50%);
   clip-path: polygon(100% 0, 100% 100%, 0 50%);
 }
 
 .nf-handle-out.react-flow__handle-right {
   right: -10px;
+  transform: translate(0, -50%);
   clip-path: polygon(0 0, 0 100%, 100% 50%);
 }
 
