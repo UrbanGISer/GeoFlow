@@ -137,3 +137,19 @@ cd notebookflow/frontend && npm run dev      # frontend
 | `notebookflow/backend/tests/test_smoke.py` | 7 项冒烟测试 |
 | `docs/next-gen-architecture.md` | 诊断 + 演进蓝图 |
 | `start.bat` / `run_tests.bat` / `start.sh` | 一键启动与测试脚本(根目录) |
+
+## 六、节点库界面空白问题(已解决, commit `beda28d` / `928ccab`)
+
+**现象**:左侧 Node Library 只有 "Nodes" 标题,Tabular / GeoData 下列表为空;`node_specs.py` 里 7 个内置节点(read_csv、column_filter、row_filter、groupby、histogram、geofile_reader、geomap)在代码中始终存在,并非被 Git 更新或 backup 删除。
+
+**根因**:界面不直接读 `node_specs.py`,而是前端 `fetchNodeSpecs()` 请求 `GET /api/nodes`;后端未成功启动或 API 不可达时 `specs` 保持 `[]`,且失败仅 `console.error` 无界面提示,看起来像"节点不见了"。
+
+| 环境 | 具体原因 | 修复 |
+|------|----------|------|
+| Windows | 原 `start.bat` 调用 PATH 上 Windows Store `python` 占位符,venv 创建失败,8000 无服务 | `start.bat` 改为默认 conda **`geoxai`**,启动前检查 pandas |
+| Windows | `geoflow` 环境 `import pandas` 崩溃,后端 import 即挂 | 改用 `geoxai`(可通过 `NOTEBOOKFLOW_CONDA_ENV` 覆盖) |
+| Mac / Win | `temp_node_factory.py` f-string 含反斜杠,Python 3.11 **SyntaxError**,后端无法 import | 提取 `intent_line` 变量后再拼 f-string(commit `beda28d`) |
+| 通用 | 浏览器打开 `http://localhost:8000`(API)而非 `http://localhost:5173`(UI) | 必须用 5173 访问前端 |
+| 自定义节点 | 存浏览器 `localStorage`,GIS/临时节点在内存,换机或重启即失 | 与内置 7 节点无关;需导出 JSON 或后续做持久化 |
+
+**验证**:后端 `http://127.0.0.1:8000/api/nodes` 应返回 7 条 JSON;前端 5173 左侧应显示 Tabular(5)+GeoData(2)。Mac:`./start.sh`(Homebrew `python3`+`npm`,缺 Node 时提示 `brew install node`)。示例 workflow:`notebookflow/examples/geoflow_exmaple.json`(路径已改为 `../examples/...` 相对路径,跨平台可 Load)。
