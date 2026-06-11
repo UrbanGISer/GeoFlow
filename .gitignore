@@ -23,3 +23,7 @@ backend/tmp/
 Thumbs.db
 *.swp
 .vscode/
+
+# User workspace (saved workflows/exports) — local data, not source
+notebookflow/backend/workspace/
+
