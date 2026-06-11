@@ -36,7 +36,6 @@ export function SideRail({
           onClick={() => onPick(t.id)}
         >
           <span className="nf-rail-icon">{t.icon}</span>
-          <span className="nf-rail-label">{t.label}</span>
         </button>
       ))}
     </div>
