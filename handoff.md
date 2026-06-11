@@ -2,7 +2,8 @@
 
 > 日期:2026-06-10
 > 任务:基于现有架构修正并提升 AI workflow、自动建节点、以及执行速度。
-> 状态:**全部完成,7 项冒烟测试通过,改动未提交(working tree)**。
+> 状态:**全部完成,7 项冒烟测试通过,已提交到 main(commit `3b81ab5`)**。
+> 测试入口:Windows 双击 `start.bat`(启动)/ `run_tests.bat`(测试);macOS 用 `./start.sh`。
 
 ## 一、问题诊断(本次会话的结论)
 
@@ -77,31 +78,48 @@
 - `docs/next-gen-architecture.md`(新):完整诊断 + 三阶段演进蓝图。
 - `notebookflow/README.md`:v0.3 highlights、缓存 API、测试说明、`AI_TIMEOUT_SECONDS`。
 
+### 5. 一键启动脚本(仓库根目录)
+
+- `start.bat`(Windows,双击即可):首次运行自动建 venv、装后端依赖、`npm install`,
+  开两个窗口分别跑后端(8000)和前端(5173),并自动打开浏览器。
+  启动时若存在 `ai.env.bat` 会自动加载(写 `set AI_API_BASE_URL=...` 等三行即可启用 AI;
+  没有该文件也能跑,AI 走规则降级)。
+- `run_tests.bat`(Windows):跑 7 项后端冒烟测试。
+- `start.sh`(macOS/Linux):同 start.bat,AI 配置读同目录 `ai.env`(`export` 形式)。
+- bat 文件为 CRLF 行尾,`.gitattributes` 已固定 `*.bat text eol=crlf`,
+  Windows 上 clone/pull 不会被 git 改坏行尾。
+
 ## 三、验证方式
 
+**Windows(推荐)**:双击仓库根目录 `start.bat`,浏览器自动打开 http://localhost:5173;
+双击 `run_tests.bat` 跑冒烟测试。前置条件:PATH 里有 Python 3.10+ 和 Node.js。
+
+**手动方式**:
+
 ```bash
-# 后端逻辑(只需 pandas + pydantic)
+# 后端逻辑测试(只需 pandas + pydantic)
 cd notebookflow/backend && python tests/test_smoke.py
 
 # 实际体验(需安装 requirements.txt)
 uvicorn app.main:app --reload --port 8000   # backend
 cd notebookflow/frontend && npm run dev      # frontend
-# 同一 workflow 连续 Run 两次,第二次日志显示 "cached (reused previous result)"
 ```
 
-## 四、遗留事项 / 下一步(按收益排序)
+**缓存效果验证**:搭一个简单 workflow 连续 Run 两次,第二次日志显示
+`cached (reused previous result)` 与 `Workflow finished in X ms (0 executed, N from cache)`。
 
-1. **改动未 git commit** —— 请 review 后自行提交。
-2. **AI 自修复闭环**(收益最大):compose 后自动 dry-run,把报错节点 + traceback
+## 四、下一步(按收益排序)
+
+1. **AI 自修复闭环**(收益最大):compose 后自动 dry-run,把报错节点 + traceback
    回传 LLM 修复(最多 N 轮)。
-3. **流式进度**:run 端点改 SSE/WebSocket,节点逐个变绿。
-4. **磁盘缓存**:ResultCache 落 Parquet/GeoParquet,重启进程缓存仍有效。
-5. **节点 SDK**(生态上限):装饰器定义节点自动生成 spec + entry_points 插件机制。
-6. **数据感知规划**:上传文件后把 schema(列名/类型/CRS)写入 `data_context`,
+2. **流式进度**:run 端点改 SSE/WebSocket,节点逐个变绿。
+3. **磁盘缓存**:ResultCache 落 Parquet/GeoParquet,重启进程缓存仍有效。
+4. **节点 SDK**(生态上限):装饰器定义节点自动生成 spec + entry_points 插件机制。
+5. **数据感知规划**:上传文件后把 schema(列名/类型/CRS)写入 `data_context`,
    LLM 直接填正确列名 —— 后端已支持,只差前端传入。
-7. `gis_ingest.py` 仍是占位代码生成,需按蓝图升级为
+6. `gis_ingest.py` 仍是占位代码生成,需按蓝图升级为
    "LLM 生成完整 spec → 安全扫描 → 沙箱试跑 → 入库"。
-8. 已知局限:引擎仍是单 `df_in` 端口(join/overlay 双输入需要类型化端口系统,
+7. 已知局限:引擎仍是单 `df_in` 端口(join/overlay 双输入需要类型化端口系统,
    见架构文档阶段 A1);多用户并发共享一个全局 store/cache(本地单用户场景可接受)。
 
 ## 五、关键文件索引
@@ -118,3 +136,4 @@ cd notebookflow/frontend && npm run dev      # frontend
 | `notebookflow/backend/app/services/notebook_standardizer.py` | AST 数据流导入 |
 | `notebookflow/backend/tests/test_smoke.py` | 7 项冒烟测试 |
 | `docs/next-gen-architecture.md` | 诊断 + 演进蓝图 |
+| `start.bat` / `run_tests.bat` / `start.sh` | 一键启动与测试脚本(根目录) |
