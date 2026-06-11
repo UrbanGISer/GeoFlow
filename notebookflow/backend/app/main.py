@@ -326,6 +326,24 @@ def workspace_create_file(payload: dict) -> dict:
     )
 
 
+@app.post("/api/workspace/save-file")
+def workspace_save_file(payload: dict) -> dict:
+    """Save a text file (e.g. workflow JSON) into a workspace folder, overwriting."""
+    return _ws_call(
+        ws.save_file,
+        payload.get("parent"),
+        payload.get("name", ""),
+        payload.get("content", ""),
+        payload.get("overwrite", True),
+    )
+
+
+@app.get("/api/workspace/read")
+def workspace_read(path: str) -> dict:
+    """Read a text file back (e.g. open a saved workflow from the Workspace tab)."""
+    return _ws_call(ws.read_file, path)
+
+
 @app.post("/api/workspace/delete")
 def workspace_delete(payload: dict) -> dict:
     return _ws_call(ws.delete_path, payload.get("path", ""))

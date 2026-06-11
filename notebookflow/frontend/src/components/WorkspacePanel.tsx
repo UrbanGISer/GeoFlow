@@ -6,6 +6,10 @@ import {
   workspaceMkdir,
   type WorkspaceListing,
 } from "../api/client";
+import { loadWorkspaceRoot, saveWorkspaceRoot } from "../types";
+
+/** Other components (e.g. the Save dialog) dispatch this to refresh the listing. */
+export const WORKSPACE_REFRESH_EVENT = "geoflow-workspace-refresh";
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -27,11 +31,17 @@ function fileIcon(name: string, isDir: boolean): string {
   return FILE_ICONS[ext] ?? "·";
 }
 
-export function WorkspacePanel() {
+interface WorkspacePanelProps {
+  /** Called when the user clicks a file (App opens .json files as workflows). */
+  onOpenFile?: (path: string) => void;
+}
+
+export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   const [listing, setListing] = useState<WorkspaceListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pathInput, setPathInput] = useState("");
+  const [root, setRoot] = useState<string | null>(() => loadWorkspaceRoot());
 
   const load = useCallback(async (path?: string | null) => {
     setBusy(true);
@@ -48,7 +58,20 @@ export function WorkspacePanel() {
   }, []);
 
   useEffect(() => {
-    load(null);
+    // Pinned root wins; otherwise the backend default workspace.
+    load(loadWorkspaceRoot());
+  }, [load]);
+
+  // External refresh (e.g. after Save Workflow writes a file here).
+  useEffect(() => {
+    const onRefresh = () => {
+      setListing((cur) => {
+        if (cur) void load(cur.path);
+        return cur;
+      });
+    };
+    window.addEventListener(WORKSPACE_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, onRefresh);
   }, [load]);
 
   const handleNewFolder = async () => {
@@ -86,6 +109,8 @@ export function WorkspacePanel() {
     }
   };
 
+  const isRoot = listing != null && root === listing.path;
+
   return (
     <div className="nf-workspace-panel">
       <div className="nf-workspace-toolbar">
@@ -118,6 +143,24 @@ export function WorkspacePanel() {
           onClick={handleNewFile}>
           + File
         </button>
+        <button
+          type="button"
+          className={`nf-btn nf-btn-sm${isRoot ? " nf-btn-pinned" : ""}`}
+          disabled={busy || !listing}
+          title={isRoot ? "This folder is the workspace root (click to unpin)" : "Pin this folder as the workspace root — default for browsing and Save Workflow"}
+          onClick={() => {
+            if (!listing) return;
+            if (isRoot) {
+              saveWorkspaceRoot(null);
+              setRoot(null);
+            } else {
+              saveWorkspaceRoot(listing.path);
+              setRoot(listing.path);
+            }
+          }}
+        >
+          {isRoot ? "📌 Root ✓" : "📌 Set Root"}
+        </button>
       </div>
       {error ? <p className="nf-error-text" style={{ padding: "4px 10px" }}>{error}</p> : null}
       <div className="nf-workspace-list">
@@ -129,11 +172,12 @@ export function WorkspacePanel() {
             <button
               type="button"
               className="nf-workspace-name"
-              title={entry.path}
+              title={entry.is_dir ? entry.path : `${entry.path}${entry.name.endsWith(".json") ? " — click to open as workflow" : ""}`}
               onClick={() => {
                 if (entry.is_dir) load(entry.path);
+                else onOpenFile?.(entry.path);
               }}
-              style={{ cursor: entry.is_dir ? "pointer" : "default" }}
+              style={{ cursor: entry.is_dir || entry.name.endsWith(".json") ? "pointer" : "default" }}
             >
               <span className="nf-workspace-icon">{fileIcon(entry.name, entry.is_dir)}</span>
               <span className="nf-workspace-label">{entry.name}</span>

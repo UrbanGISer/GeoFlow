@@ -12,6 +12,7 @@ interface LeftPanelProps {
   specs: NodeSpec[];
   onAdd: (spec: NodeSpec) => void;
   selectedSpec?: NodeSpec | null;
+  onOpenFile?: (path: string) => void;
 }
 
 function InfoTab({ spec }: { spec?: NodeSpec | null }) {
@@ -86,7 +87,7 @@ function InfoTab({ spec }: { spec?: NodeSpec | null }) {
   );
 }
 
-export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
+export function LeftPanel({ specs, onAdd, selectedSpec, onOpenFile }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<LeftTab>("nodes");
   const [librarySpec, setLibrarySpec] = useState<NodeSpec | null>(null);
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => loadAIConfig());
@@ -125,7 +126,7 @@ export function LeftPanel({ specs, onAdd, selectedSpec }: LeftPanelProps) {
           />
         ) : null}
         {activeTab === "info" ? <InfoTab spec={displaySpec} /> : null}
-        {activeTab === "workspace" ? <WorkspacePanel /> : null}
+        {activeTab === "workspace" ? <WorkspacePanel onOpenFile={onOpenFile} /> : null}
         {activeTab === "ai" ? (
           <div className="nf-left-tab-body" style={{ overflowY: "auto", padding: "10px" }}>
             <AISettingsPanel config={aiConfig} onChange={setAiConfig} compact />

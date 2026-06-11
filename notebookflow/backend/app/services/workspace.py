@@ -88,6 +88,36 @@ def create_file(parent: str | None, name: str, content: str = "") -> dict[str, s
     return {"path": str(target)}
 
 
+def save_file(parent: str | None, name: str, content: str, overwrite: bool = True) -> dict[str, str]:
+    """Write a text file (workflow JSON, exports, …). Overwrites by default."""
+    name = Path(name).name
+    if not name:
+        raise ValueError("File name is required.")
+    target = _resolve(parent) / name
+    if target.exists() and target.is_dir():
+        raise ValueError(f"Target is a folder: {target}")
+    if target.exists() and not overwrite:
+        raise FileExistsError(f"Already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return {"path": str(target)}
+
+
+_MAX_READ_BYTES = 20 * 1024 * 1024
+
+
+def read_file(path: str) -> dict[str, str]:
+    """Read a text file (e.g. a saved workflow JSON) back from the workspace."""
+    if not path:
+        raise ValueError("Path is required.")
+    target = _resolve(path)
+    if not target.exists() or not target.is_file():
+        raise FileNotFoundError(f"File not found: {target}")
+    if target.stat().st_size > _MAX_READ_BYTES:
+        raise ValueError(f"File too large to open here (> {_MAX_READ_BYTES // 1024 // 1024} MB).")
+    return {"path": str(target), "content": target.read_text(encoding="utf-8", errors="replace")}
+
+
 def delete_path(path: str) -> dict[str, str]:
     if not path:
         raise ValueError("Path is required.")

@@ -10,7 +10,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from "@xyflow/react";
-import { fetchNodeSpecs, runSingleNode, runWorkflow } from "./api/client";
+import { fetchNodeSpecs, runSingleNode, runWorkflow, workspaceRead } from "./api/client";
 import { AIStudioPage } from "./components/AIStudioPage";
 import {
   ANNOTATION_NODE_TYPE,
@@ -22,6 +22,7 @@ import { LeftPanel } from "./components/LeftPanel";
 import { NodeNotebookModal } from "./components/NodeNotebookModal";
 import { OutputPreview } from "./components/OutputPreview";
 import { PlanReviewPanel } from "./components/PlanReviewPanel";
+import { SaveWorkflowModal } from "./components/SaveWorkflowModal";
 import { SelectedNodePanel } from "./components/SelectedNodePanel";
 import { WorkflowCanvas } from "./components/WorkflowCanvas";
 import type {
@@ -148,6 +149,7 @@ export default function App() {
   const [aiStudioOpen, setAiStudioOpen] = useState(false);
   const [selectedSpec, setSelectedSpec] = useState<NodeSpec | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
   const clipboardRef = useRef<ClipboardContent | null>(null);
   const pasteCountRef = useRef(0);
 
@@ -579,10 +581,10 @@ export default function App() {
     setModalNodeId(null); setNodeOutputs({}); setLastRunLogs([]); setWorkflowError(null);
   };
 
-  const handleSaveJson = () => {
+  const buildSavedWorkflow = useCallback((): SavedWorkflow => {
     const flowNodes = nodes.filter((n) => !isAnnotation(n));
     const annoNodes = nodes.filter(isAnnotation);
-    const wf: SavedWorkflow = {
+    return {
       nodes: flowNodes.map((n) => ({
         id: n.id, type: n.data.type, label: n.data.label, category: n.data.category,
         position: { x: n.position.x, y: n.position.y }, params: n.data.params, code: n.data.code,
@@ -601,13 +603,16 @@ export default function App() {
         borderColor: String(n.data.borderColor ?? DEFAULT_ANNOTATION_DATA.borderColor),
       })),
     };
-    const blob = new Blob([JSON.stringify(wf, null, 2)], { type: "application/json" });
+  }, [nodes, edges]);
+
+  const downloadWorkflow = useCallback(() => {
+    const blob = new Blob([JSON.stringify(buildSavedWorkflow(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "geoflow-workflow.json";
     a.click();
     URL.revokeObjectURL(a.href);
-  };
+  }, [buildSavedWorkflow]);
 
   const annotationBoxToNode = useCallback((a: AnnotationBoxPayload): Node<FlowNodeData> => ({
     id: a.id || newNodeId(),
@@ -696,6 +701,27 @@ export default function App() {
       setSelectedId(null); setModalNodeId(null); setNodeOutputs({}); setWorkflowError(null);
     },
     [specs],
+  );
+
+  const handleOpenWorkspaceFile = useCallback(
+    async (path: string) => {
+      if (!path.toLowerCase().endsWith(".json")) return;
+      const fileName = path.split(/[/\\]/).pop();
+      if (nodesRef.current.length && !confirm(`Open "${fileName}" as a workflow? The current canvas will be replaced.`)) {
+        return;
+      }
+      try {
+        const res = await workspaceRead(path);
+        const wf = JSON.parse(res.content) as SavedWorkflow;
+        if (!Array.isArray(wf.nodes) || !Array.isArray(wf.edges)) {
+          throw new Error("Not a GeoFlow workflow JSON (missing nodes/edges).");
+        }
+        restoreWorkflow(wf);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [restoreWorkflow],
   );
 
   const onPickLoadFile = (ev: ChangeEvent<HTMLInputElement>) => {
@@ -853,7 +879,7 @@ export default function App() {
           <button type="button" className="nf-btn" onClick={handleClearCanvas}>
             Clear
           </button>
-          <button type="button" className="nf-btn" onClick={handleSaveJson}>
+          <button type="button" className="nf-btn" onClick={() => setSaveModalOpen(true)}>
             Save
           </button>
           <button type="button" className="nf-btn" onClick={() => fileInputRef.current?.click()}>
@@ -885,6 +911,7 @@ export default function App() {
                   specs={specs}
                   onAdd={handleAddNode}
                   selectedSpec={selectedNode ? specById[selectedNode.data.type] : selectedSpec}
+                  onOpenFile={handleOpenWorkspaceFile}
                 />
               </div>
             </Panel>
@@ -1015,6 +1042,13 @@ export default function App() {
           onClose={() => setCtxMenu(null)}
         />
       ) : null}
+
+      <SaveWorkflowModal
+        open={saveModalOpen}
+        getContent={() => JSON.stringify(buildSavedWorkflow(), null, 2)}
+        onDownload={downloadWorkflow}
+        onClose={() => setSaveModalOpen(false)}
+      />
     </div>
   );
 }

@@ -169,6 +169,26 @@ export interface NodeGenerateResponse {
   warnings: string[];
 }
 
+/** Pinned workspace root folder (default browse location + save target). */
+export const WORKSPACE_ROOT_KEY = "geoflow.workspaceRoot.v1";
+
+export function loadWorkspaceRoot(): string | null {
+  try {
+    return localStorage.getItem(WORKSPACE_ROOT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveWorkspaceRoot(path: string | null): void {
+  try {
+    if (path) localStorage.setItem(WORKSPACE_ROOT_KEY, path);
+    else localStorage.removeItem(WORKSPACE_ROOT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export interface GISArticleInput {
   title: string;
   method: string;

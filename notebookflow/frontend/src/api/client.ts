@@ -275,6 +275,24 @@ export async function workspaceDelete(path: string): Promise<{ deleted: string }
   return parseJsonWithHttpError<{ deleted: string }>(res, "Delete");
 }
 
+export async function workspaceSaveFile(
+  parent: string | null,
+  name: string,
+  content: string,
+): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/save-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent, name, content, overwrite: true }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Save file");
+}
+
+export async function workspaceRead(path: string): Promise<{ path: string; content: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/read?path=${encodeURIComponent(path)}`);
+  return parseJsonWithHttpError<{ path: string; content: string }>(res, "Read file");
+}
+
 export function artifactUrl(path: string): string {
   if (path.startsWith("http")) return path;
   const rel = path.startsWith("/") ? path : `/${path}`;

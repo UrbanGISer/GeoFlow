@@ -1476,6 +1476,25 @@ body,
   overflow: hidden;
 }
 
+/* ── Save Workflow modal + pinned workspace root ──────────────────────────── */
+.nf-save-modal {
+  max-width: 520px;
+}
+
+.nf-save-modal .nf-field input {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 100%;
+}
+
+.nf-btn-pinned {
+  border-color: #1976d2;
+  background: #e3f0fc;
+  color: #1976d2;
+}
+
 /* ── Compact AI settings (left panel tab) ─────────────────────────────────── */
 .nf-ai-settings-compact {
   padding: 10px 12px;
