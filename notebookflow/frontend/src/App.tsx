@@ -237,16 +237,54 @@ export default function App() {
     [],
   );
 
+  // Node square is 40px; new nodes land 1.5 box-widths to the right of the
+  // selected node (gap = 1.5 × 40, so x advances by 2.5 × 40).
+  const NODE_BOX = 40;
+
   const handleAddNode = useCallback(
     (spec: NodeSpec) => {
-      setNodes((nds) => {
-        const last = nds[nds.length - 1];
-        const x = last ? last.position.x + 180 : 100;
-        const y = last ? last.position.y : 140;
-        return [...nds, buildNode(spec, { x, y })];
-      });
+      const sel = selectedId ? nodes.find((n) => n.id === selectedId) : undefined;
+      let pos: { x: number; y: number };
+      if (sel) {
+        pos = { x: sel.position.x + NODE_BOX * 2.5, y: sel.position.y };
+      } else if (nodes.length) {
+        const rightmost = nodes.reduce((a, b) => (a.position.x >= b.position.x ? a : b));
+        pos = { x: rightmost.position.x + NODE_BOX * 2.5, y: rightmost.position.y };
+      } else {
+        pos = { x: 100, y: 140 };
+      }
+      // Nudge down while the spot is occupied (e.g. adding several nodes
+      // from the same selected source).
+      const occupied = (p: { x: number; y: number }) =>
+        nodes.some(
+          (n) => Math.abs(n.position.x - p.x) < NODE_BOX && Math.abs(n.position.y - p.y) < NODE_BOX,
+        );
+      while (occupied(pos)) {
+        pos = { x: pos.x, y: pos.y + NODE_BOX * 1.5 };
+      }
+      const node = buildNode(spec, pos);
+      setNodes((nds) => [...nds, node]);
+      // Auto-connect selected node → new node when the selected node carries
+      // data out and the new node accepts an input.
+      if (
+        sel &&
+        (sel.data.showOutput ?? true) &&
+        sel.data.outputHandle === "df_out" &&
+        node.data.showInput
+      ) {
+        setEdges((es) => [
+          ...es,
+          {
+            id: `edge_${sel.id}_${node.id}_${Date.now()}`,
+            source: sel.id,
+            target: node.id,
+            sourceHandle: "df_out",
+            targetHandle: "df_in",
+          },
+        ]);
+      }
     },
-    [buildNode],
+    [nodes, selectedId, buildNode],
   );
 
   const handleDropSpec = useCallback(

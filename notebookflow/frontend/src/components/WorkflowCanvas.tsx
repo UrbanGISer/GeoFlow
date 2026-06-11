@@ -86,7 +86,7 @@ function WorkflowCanvasInner({
       <div className="nf-canvas-head">
         <h2 className="nf-panel-title">Canvas</h2>
         <span className="nf-canvas-sub">
-          Click or drag nodes from the left panel. Double-click a node to edit code.
+          Double-click or drag library nodes to add (auto-connects from the selected node). Double-click a canvas node to edit code.
         </span>
       </div>
       <div
@@ -130,7 +130,7 @@ function WorkflowCanvasInner({
         {empty ? (
           <div className="nf-canvas-empty" aria-hidden="true">
             <p className="nf-canvas-empty-title">Canvas</p>
-            <p className="nf-canvas-empty-hint">Click or drag a node from the left panel to add it here.</p>
+            <p className="nf-canvas-empty-hint">Double-click or drag a node from the left panel to add it here.</p>
           </div>
         ) : null}
       </div>

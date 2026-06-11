@@ -91,13 +91,12 @@ export function NodeLibrary({ specs, onAdd, selectedSpecId, onSelectSpec }: Node
                     draggable
                     role="button"
                     tabIndex={0}
+                    title="Double-click to add to canvas (auto-connects from the selected node); drag also works"
                     style={{ borderLeftColor: spec.color, borderLeftWidth: "3px", borderLeftStyle: "solid" }}
-                    onClick={() => {
-                      onAdd(spec);
-                      onSelectSpec?.(spec);
-                    }}
+                    onClick={() => onSelectSpec?.(spec)}
+                    onDoubleClick={() => onAdd(spec)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      if (e.key === "Enter") {
                         onAdd(spec);
                         onSelectSpec?.(spec);
                       }
