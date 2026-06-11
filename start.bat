@@ -1,56 +1,62 @@
 @echo off
-REM ============================================================
-REM  GeoFlow / NotebookFlow one-click launcher (Windows)
-REM  - creates backend venv + installs deps on first run
-REM  - starts backend (port 8000) and frontend (port 5173)
-REM  - opens the app in your browser
-REM ============================================================
-setlocal
+REM GeoFlow / NotebookFlow launcher — default conda env: geoxai
+setlocal EnableExtensions
 
-REM Optional: put your AI planner keys in ai.env.bat next to this file, e.g.
-REM   set AI_API_BASE_URL=https://your-gateway/v1
-REM   set AI_API_KEY=sk-...
-REM   set AI_MODEL=deepseek-chat
 if exist "%~dp0ai.env.bat" call "%~dp0ai.env.bat"
 
-REM ---------- backend ----------
-cd /d "%~dp0notebookflow\backend"
+if not defined NOTEBOOKFLOW_CONDA_ENV set "NOTEBOOKFLOW_CONDA_ENV=geoxai"
+set "PY=%USERPROFILE%\.conda\envs\%NOTEBOOKFLOW_CONDA_ENV%\python.exe"
+set "ROOT=%~dp0"
+set "ROOT=%ROOT:~0,-1%"
+set "BACKEND=%ROOT%\notebookflow\backend"
+set "FRONTEND=%ROOT%\notebookflow\frontend"
 
-if not exist .venv (
-    echo [GeoFlow] Creating Python virtual environment...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo [GeoFlow] ERROR: failed to create venv. Is Python 3.10+ on PATH?
-        pause
-        exit /b 1
-    )
+if not exist "%PY%" (
+    echo [GeoFlow] ERROR: conda env "%NOTEBOOKFLOW_CONDA_ENV%" not found at:
+    echo   %PY%
+    pause
+    exit /b 1
 )
 
-call .venv\Scripts\activate.bat
-echo [GeoFlow] Installing backend dependencies (fast if already installed)...
-pip install -r requirements.txt -q
+echo [GeoFlow] Using conda env: %NOTEBOOKFLOW_CONDA_ENV%
+echo [GeoFlow] Python: %PY%
 
-start "NotebookFlow Backend (port 8000)" cmd /k "cd /d %~dp0notebookflow\backend && call .venv\Scripts\activate.bat && uvicorn app.main:app --reload --port 8000"
+"%PY%" -c "import sys; assert sys.version_info>=(3,10); import pandas" >nul 2>&1
+if errorlevel 1 (
+    echo [GeoFlow] ERROR: %NOTEBOOKFLOW_CONDA_ENV% cannot import pandas.
+    pause
+    exit /b 1
+)
 
-REM ---------- frontend ----------
-cd /d "%~dp0notebookflow\frontend"
+cd /d "%BACKEND%"
+echo [GeoFlow] Installing backend dependencies
+"%PY%" -m pip install -r requirements.txt -q
+if errorlevel 1 (
+    echo [GeoFlow] ERROR: pip install failed.
+    pause
+    exit /b 1
+)
 
+start "NotebookFlow Backend 8000" cmd /k "cd /d \"%BACKEND%\" && \"%PY%\" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
+
+cd /d "%FRONTEND%"
 if not exist node_modules (
-    echo [GeoFlow] Installing frontend dependencies (first run only)...
+    echo [GeoFlow] Installing frontend dependencies - first run only
     call npm install
     if errorlevel 1 (
-        echo [GeoFlow] ERROR: npm install failed. Is Node.js installed?
+        echo [GeoFlow] ERROR: npm install failed.
         pause
         exit /b 1
     )
 )
 
-start "NotebookFlow Frontend (port 5173)" cmd /k "cd /d %~dp0notebookflow\frontend && npm run dev"
+start "NotebookFlow Frontend 5173" cmd /k "cd /d \"%FRONTEND%\" && npm run dev"
 
-REM ---------- open browser ----------
-echo [GeoFlow] Waiting for dev servers to boot...
-timeout /t 5 /nobreak >nul
+echo [GeoFlow] Waiting for dev servers to boot
+timeout /t 6 /nobreak >nul
 start http://localhost:5173
 
 echo [GeoFlow] Launched. Close the two server windows to stop.
+echo [GeoFlow] Verify nodes: http://127.0.0.1:8000/api/nodes
 endlocal
+exit /b 0

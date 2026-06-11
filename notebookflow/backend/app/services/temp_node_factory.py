@@ -117,9 +117,10 @@ def _code_template(step: PlanStep, output_html: bool) -> str:
             "    raise ValueError('Provide file_path for temporary source node.')\n"
             "df_out = pd.read_csv(file_path)\n"
         )
+    intent_line = re.sub(r"\s+", " ", step.intent).strip()
     return (
         "if df_in is None:\n"
         "    raise ValueError('Temp transform node expects df_in.')\n"
-        f"# {re.sub(r'\\s+', ' ', step.intent).strip()}\n"
+        f"# {intent_line}\n"
         "df_out = df_in.copy()\n"
     )
