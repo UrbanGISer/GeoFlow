@@ -19,17 +19,22 @@ export function CanvasContextMenu({ x, y, items, onClose }: CanvasContextMenuPro
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onDown = (e: globalThis.MouseEvent) => {
+    // Capture phase: fires even when React Flow stops propagation on the pane,
+    // so a click anywhere outside the menu always dismisses it.
+    const onDown = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("mousedown", onDown);
+    const onBlurAway = () => onClose();
+    window.addEventListener("pointerdown", onDown, true);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlurAway);
     return () => {
-      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlurAway);
     };
   }, [onClose]);
 

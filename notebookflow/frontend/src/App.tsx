@@ -38,12 +38,16 @@ function newNodeId(): string {
 
 function flowExtras(
   spec: NodeSpec,
-): Pick<FlowNodeData, "showInput" | "outputHandle" | "inputCount" | "dynamicInputs"> {
+): Pick<FlowNodeData, "showInput" | "outputHandle" | "showOutput" | "inputCount" | "dynamicInputs"> {
   const inputCount = Object.keys(spec.inputs).length;
+  const hasDf = Object.keys(spec.outputs).includes("df_out");
   const hasHtml = Object.keys(spec.outputs).includes("html_out");
   return {
     showInput: inputCount > 0,
-    outputHandle: hasHtml ? "html_out" : "df_out",
+    outputHandle: hasHtml && !hasDf ? "html_out" : "df_out",
+    // View-only nodes (map/plot, html_out only) carry no downstream data,
+    // so they get no output port.
+    showOutput: hasDf,
     inputCount: Math.max(1, inputCount),
     dynamicInputs: Boolean(spec.dynamic_inputs),
   };
@@ -490,7 +494,7 @@ export default function App() {
             data: {
               label: sn.label, type: sn.type, category: sn.category ?? "Unknown",
               params: sn.params ?? {}, code: sn.code ?? "", status: "idle" as const,
-              color: "#bdbdbd", showInput: true, outputHandle: "df_out" as const,
+              color: "#bdbdbd", showInput: true, outputHandle: "df_out" as const, showOutput: true,
             },
           };
         }
@@ -523,7 +527,10 @@ export default function App() {
         const spec = specs.find((s) => s.id === sn.type);
         const extras = spec
           ? flowExtras(spec)
-          : { showInput: true, outputHandle: "df_out" as const, inputCount: 1, dynamicInputs: false };
+          : {
+              showInput: true, outputHandle: "df_out" as const, showOutput: true,
+              inputCount: 1, dynamicInputs: false,
+            };
         if (sn.input_count && sn.input_count > (extras.inputCount ?? 1)) {
           extras.inputCount = sn.input_count;
         }

@@ -181,6 +181,8 @@ export interface FlowNodeData {
   color: string;
   showInput: boolean;
   outputHandle: "df_out" | "html_out";
+  /** False for view-only nodes (html_out only) — no downstream data to connect */
+  showOutput?: boolean;
   /** Number of input ports (1 = just df_in, 2 = df_in + df_in_2, …) */
   inputCount?: number;
   /** User may add/remove input ports via +/− on the node */

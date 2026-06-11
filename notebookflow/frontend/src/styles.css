@@ -730,11 +730,6 @@ body,
   word-wrap: break-word;
 }
 
-.nf-flow-handle {
-  width: 8px !important;
-  height: 8px !important;
-}
-
 /* Bottom split: node inspector */
 .nf-node-editor-toolbar {
   justify-content: space-between;
@@ -1207,23 +1202,69 @@ body,
   color: #999;
 }
 
-/* ── Dynamic input ports (+/−) on nodes ───────────────────────────────────── */
-.nf-flow-port-controls {
+/* ── KNIME-style triangle ports ───────────────────────────────────────────── */
+/* Input: ◀ apex points left, right edge touches the node's left side.
+   Output: ▶ apex points right, left edge touches the node's right side. */
+.nf-flow-handle.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  min-width: 0;
+  min-height: 0;
+  background: #111;
+  border: none;
+  border-radius: 0;
+}
+
+.nf-handle-in.react-flow__handle-left {
+  left: -10px;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.nf-handle-out.react-flow__handle-right {
+  right: -10px;
+  clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+
+/* ── Dynamic input ports: click port → +/− popover ────────────────────────── */
+.nf-port-strip {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.nf-port-popover {
+  position: absolute;
+  left: -38px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  gap: 3px;
-  margin-top: 1px;
+  flex-direction: column;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 2px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  z-index: 10;
 }
 
 .nf-port-btn {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   padding: 0;
-  border: 1px solid #999;
-  border-radius: 50%;
+  border: none;
+  border-radius: 3px;
   background: #fff;
   color: #444;
-  font-size: 12px;
-  line-height: 13px;
+  font-size: 11px;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1232,7 +1273,6 @@ body,
 
 .nf-port-btn:hover {
   background: #1976d2;
-  border-color: #1976d2;
   color: #fff;
 }
 
