@@ -61,13 +61,44 @@ export function AISettingsPanel({
             value={config.model}
             onChange={(e) => onChange({ ...config, model: e.target.value })}
           >
-            <option value="gemini-2.5-flash">gemini-2.5-flash (recommended, free)</option>
-            <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
-            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-            <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
-            <option value="deepseek-chat">deepseek-chat</option>
+            <optgroup label="Gemini 3.5">
+              <option value="gemini-3.5-pro">
+                gemini-3.5-pro — heavy coding, deep reasoning &amp; data analysis
+              </option>
+              <option value="gemini-3.5-flash">
+                gemini-3.5-flash — best price-performance, fast agent loops
+              </option>
+            </optgroup>
+            <optgroup label="Gemini 3.1">
+              <option value="gemini-3.1-pro">
+                gemini-3.1-pro — math/logic, 1M context ($2.00/$12.00 per 1M)
+              </option>
+              <option value="gemini-3.1-flash-live">
+                gemini-3.1-flash-live — ultra-low-latency realtime voice
+              </option>
+              <option value="gemini-3.1-flash-lite">
+                gemini-3.1-flash-lite — budget tier, high-volume tasks
+              </option>
+            </optgroup>
+            <optgroup label="Gemini 2.5">
+              <option value="gemini-2.5-pro">
+                gemini-2.5-pro ($1.25/$10.00 per 1M, ≤200K context)
+              </option>
+              <option value="gemini-2.5-flash">
+                gemini-2.5-flash — recommended, free tier ($0.30/$2.50 per 1M)
+              </option>
+              <option value="gemini-2.5-flash-lite">
+                gemini-2.5-flash-lite ($0.10/$0.40 per 1M)
+              </option>
+            </optgroup>
+            <optgroup label="Other providers (set matching Base URL)">
+              <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
+              <option value="deepseek-chat">deepseek-chat (DeepSeek)</option>
+            </optgroup>
           </select>
+          <span className="nf-field-hint">
+            Free tier is available on most Gemini models. Prices shown as input/output per 1M tokens.
+          </span>
         </div>
         <div className="nf-field nf-field-row">
           <button type="button" className="nf-btn nf-btn-primary" onClick={handleSave}>
