@@ -1,8 +1,0 @@
-{
-  "python": "",
-  "backend_port": 8000,
-  "frontend_port": 5173,
-  "open_browser": true,
-  "window_mode": "app",
-  "auto_stop_on_close": true
-}

@@ -33,4 +33,5 @@ local/
 # Per-machine launcher config (use config.json.example)
 scripts/windows/config.json
 scripts/macos/config.json
+scripts/macos/config.json.bak
 
