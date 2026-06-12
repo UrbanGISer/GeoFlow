@@ -37,17 +37,22 @@ WINDOW_MODE="app"
 AUTO_STOP=true
 
 if [[ -f "$CONFIG" ]]; then
-  eval "$(python3 - "$CONFIG" <<'PY'
+  # Avoid eval/repr — macOS bash 3.2 chokes on WINDOW_MODE='app' from Python !r.
+  # shellcheck disable=SC1090
+  source <(python3 - "$CONFIG" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     c = json.load(f)
-print(f"BE_PORT={int(c.get('backend_port', 8000))}")
-print(f"FE_PORT={int(c.get('frontend_port', 5173))}")
-print(f"OPEN_BROWSER={str(bool(c.get('open_browser', True))).lower()}")
-print(f"WINDOW_MODE={c.get('window_mode', 'app')!r}")
-print(f"AUTO_STOP={str(bool(c.get('auto_stop_on_close', True))).lower()}")
+wm = c.get("window_mode", "app")
+if wm not in ("app", "browser", "none"):
+    wm = "app"
+print("BE_PORT=%d" % int(c.get("backend_port", 8000)))
+print("FE_PORT=%d" % int(c.get("frontend_port", 5173)))
+print("OPEN_BROWSER=%s" % str(bool(c.get("open_browser", True))).lower())
+print("WINDOW_MODE=%s" % wm)
+print("AUTO_STOP=%s" % str(bool(c.get("auto_stop_on_close", True))).lower())
 PY
-)"
+  )
 fi
 
 UI_URL="http://127.0.0.1:${FE_PORT}"

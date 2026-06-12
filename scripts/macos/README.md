@@ -5,7 +5,7 @@ Background backend + frontend, opens FlowX in a **Chrome/Edge app window**.
 
 ## Quick start
 
-1. Copy `config.json.example` → `config.json`.
+1. Copy `config.json.example` → `config.json` (optional; defaults work without it).
 2. Make scripts executable (first time only):
    ```bash
    chmod +x launch.sh stop.sh "Launch FlowX.command"
