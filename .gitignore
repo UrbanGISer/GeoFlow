@@ -27,3 +27,10 @@ Thumbs.db
 # User workspace (saved workflows/exports) — local data, not source
 notebookflow/backend/workspace/
 
+# Windows-only local desktop experiments (superseded by scripts/)
+local/
+
+# Per-machine launcher config (use config.json.example)
+scripts/windows/config.json
+scripts/macos/config.json
+

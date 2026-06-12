@@ -89,9 +89,14 @@ GeoFlow 是 KNIME 式的本地优先可视化工作流平台(FastAPI 后端 + Re
 
 ## 二、验证方式
 
-**一键启动**:Windows 双击 `start.bat`(默认 conda env `geoxai`,可用
-`NOTEBOOKFLOW_CONDA_ENV` 覆盖;存在 `ai.env.bat` 自动加载 AI 配置);macOS `./start.sh`。
-浏览器访问 **http://localhost:5173**(8000 是 API)。
+**推荐启动(FlowX shell)**:Windows 双击 `scripts/windows/Launch FlowX.vbs`;
+macOS 双击 `scripts/macos/Launch FlowX.command`(首次 `chmod +x launch.sh stop.sh`).
+隐藏后端/前端 + Edge/Chrome `--app` 窗口;**关闭 FlowX 窗口自动停服**。
+配置:`scripts/*/config.json.example` → `config.json`;手动停服:`stop.ps1` / `stop.sh`。
+
+**调试启动**:Windows `start.bat` / macOS `./start.sh`(可见终端,Ctrl+C 停止)。
+默认 conda env `geoxai`(Windows)或 backend `.venv`(macOS);`ai.env.bat` / `ai.env` 加载 AI 密钥。
+浏览器 **http://127.0.0.1:5173**(8000 是 API)。
 
 **后端冒烟测试**(9 项,无需 pytest):
 ```bash

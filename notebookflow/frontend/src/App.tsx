@@ -900,7 +900,7 @@ export default function App() {
   return (
     <div className="nf-app">
       <header className="nf-toolbar">
-        <div className="nf-brand">GeoFlow</div>
+        <div className="nf-brand">FlowX</div>
         <div className="nf-toolbar-actions">
           <button type="button" className="nf-btn nf-btn-primary" onClick={handleRunWorkflow}>
             Run
