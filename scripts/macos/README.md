@@ -3,16 +3,28 @@
 Background backend + frontend, opens FlowX in a **Chrome/Edge app window**.  
 **Closing the FlowX window automatically stops** servers (`auto_stop_on_close` in config).
 
-## Quick start
+## Quick start (recommended — no Terminal)
 
-1. Copy `config.json.example` → `config.json` (optional; defaults work without it).
-2. Make scripts executable (first time only):
+1. Copy `config.json.example` → `config.json` (optional).
+2. First time only:
    ```bash
-   chmod +x launch.sh stop.sh "Launch FlowX.command"
+   cd scripts/macos
+   chmod +x launch.sh stop.sh FlowX.app/Contents/MacOS/flowx "Launch FlowX.command"
    ```
-3. Double-click **`Launch FlowX.command`** or run `./launch.sh`.
+3. In Finder, double-click **`FlowX.app`**.
 
-Requires Homebrew **Python 3.10+** and **Node.js** (same as repo `start.sh`).
+No Terminal window. When you close the FlowX Chrome window, servers stop and the launcher exits.
+
+**Gatekeeper:** If macOS blocks the app, right-click **FlowX.app** → **Open** once.
+
+## Alternative: Terminal debug
+
+```bash
+./launch.sh --show-frontend-window   # Vite logs in this Terminal
+./launch.sh --detach                 # return to prompt; stop with ./stop.sh
+```
+
+Legacy repo root `./start.sh` still works (Ctrl+C to stop).
 
 ## Stop manually
 
@@ -25,21 +37,19 @@ Requires Homebrew **Python 3.10+** and **Node.js** (same as repo `start.sh`).
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `python` | `""` | Optional explicit python3 path |
-| `window_mode` | `app` | `app` = app window; `browser` = Safari/default tab |
+| `window_mode` | `app` | `app` = app window; `browser` = default tab |
 | `auto_stop_on_close` | `true` | Closing app window runs `stop.sh` |
 
-Override Python/npm via env: `NOTEBOOKFLOW_PYTHON`, `NOTEBOOKFLOW_NPM`.
+Override: `NOTEBOOKFLOW_PYTHON`, `NOTEBOOKFLOW_NPM`.
 
-## Flags
+## Logs
 
-```bash
-./launch.sh --show-frontend-window   # Vite logs in Terminal
-./launch.sh --use-browser --detach   # normal tab, no auto-stop
-./launch.sh --skip-browser           # servers only
-```
+`~/Library/Logs/FlowX/backend.log`, `frontend.log`
 
-Logs: `~/Library/Logs/FlowX/backend.log`, `frontend.log`
+## Files
 
-## Debug
-
-`start.sh` at repo root still works (foreground Terminal + Ctrl+C).
+| File | Purpose |
+|------|---------|
+| `FlowX.app` | **Double-click** — no Terminal (like Windows `.vbs`) |
+| `Launch FlowX.command` | Opens `FlowX.app` (may flash Terminal briefly) |
+| `launch.sh` / `stop.sh` | Core logic |

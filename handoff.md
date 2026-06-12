@@ -90,7 +90,7 @@ GeoFlow 是 KNIME 式的本地优先可视化工作流平台(FastAPI 后端 + Re
 ## 二、验证方式
 
 **推荐启动(FlowX shell)**:Windows 双击 `scripts/windows/Launch FlowX.vbs`;
-macOS 双击 `scripts/macos/Launch FlowX.command`(首次 `chmod +x launch.sh stop.sh`).
+macOS 双击 `scripts/macos/FlowX.app`(首次 `chmod +x launch.sh stop.sh FlowX.app/Contents/MacOS/flowx`).
 隐藏后端/前端 + Edge/Chrome `--app` 窗口;**关闭 FlowX 窗口自动停服**。
 配置:`scripts/*/config.json.example` → `config.json`;手动停服:`stop.ps1` / `stop.sh`。
 

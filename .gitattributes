@@ -2,3 +2,4 @@
 *.sh text eol=lf
 *.command text eol=lf
 scripts/macos/* text eol=lf
+scripts/macos/FlowX.app/Contents/MacOS/flowx text eol=lf

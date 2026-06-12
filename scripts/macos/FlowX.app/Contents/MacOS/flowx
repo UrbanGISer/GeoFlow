@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# FlowX.app entry — runs launch.sh without Terminal (double-click in Finder).
+set -euo pipefail
+MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPTS_MACOS="$(cd "$MACOS_DIR/../../.." && pwd)"
+cd "$SCRIPTS_MACOS"
+exec ./launch.sh

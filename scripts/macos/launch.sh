@@ -121,8 +121,12 @@ wait_url() {
 }
 
 is_flowx_app_running() {
-  # Match Chromium using FlowX profile + app URL
-  ps aux 2>/dev/null | grep -E '[F]lowX/app-shell' | grep -q -- "--app=${UI_URL}"
+  # Only the --app= process counts; profile-only Chrome helpers must not block exit.
+  ps aux 2>/dev/null | grep -E '[F]lowX/app-shell' | grep -E -- '--app=http://127\.0\.0\.1:[0-9]+' | grep -q .
+}
+
+stop_flowx_chromium() {
+  pkill -f "FlowX/app-shell" 2>/dev/null || true
 }
 
 wait_flowx_app_closed() {
@@ -140,6 +144,7 @@ wait_flowx_app_closed() {
     fi
     sleep 2
   done
+  stop_flowx_chromium
 }
 
 open_flowx_app() {
@@ -162,8 +167,14 @@ open_flowx_app() {
   return 1
 }
 
+_CLEANUP_DONE=false
 cleanup_servers() {
+  if [[ "$_CLEANUP_DONE" == true ]]; then
+    return 0
+  fi
+  _CLEANUP_DONE=true
   info "Stopping servers..."
+  stop_flowx_chromium
   "$HERE/stop.sh"
 }
 
@@ -260,8 +271,12 @@ if [[ "$WATCH_APP" == true ]]; then
   trap cleanup_servers EXIT INT TERM
   wait_flowx_app_closed
   cleanup_servers
+  trap - EXIT INT TERM
+  info "FlowX stopped."
 elif [[ "$DETACH" == true || "$SKIP_BROWSER" == true ]]; then
   info "Servers running in background. Stop: ./stop.sh"
 else
   info "Servers running. Stop: ./stop.sh"
 fi
+
+exit 0

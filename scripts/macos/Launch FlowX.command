@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-cd "$(dirname "$0")"
-exec ./launch.sh
+# Prefer double-clicking FlowX.app (no Terminal). This opens the app bundle.
+open "$(cd "$(dirname "$0")" && pwd)/FlowX.app"

@@ -6,7 +6,7 @@ ComfyUI-style local dev launchers (hidden servers + app window).
 | Platform | Folder | Double-click |
 |----------|--------|--------------|
 | Windows | [windows/](windows/) | `Launch FlowX.vbs` |
-| macOS | [macos/](macos/) | `Launch FlowX.command` |
+| macOS | [macos/](macos/) | **`FlowX.app`** (no Terminal) |
 
 Legacy debug launchers (visible Terminal): repo root `start.bat` / `start.sh`.
 
