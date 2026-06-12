@@ -1,30 +1,47 @@
 # FlowX — macOS launcher
 
-Background backend + frontend, opens FlowX in a **Chrome/Edge app window**.  
-**Closing the FlowX window automatically stops** servers (`auto_stop_on_close` in config).
+Background backend + frontend, opens FlowX in a **native window** (FlowX icon in Dock) or Chrome app window.
 
-## Quick start (recommended — no Terminal)
+## Quick start
 
 1. Copy `config.json.example` → `config.json` (optional).
 2. First time only:
    ```bash
    cd scripts/macos
-   chmod +x launch.sh stop.sh FlowX.app/Contents/MacOS/flowx "Launch FlowX.command"
+   chmod +x launch.sh stop.sh "Launch FlowX.command" FlowX.app/Contents/MacOS/flowx
    ```
-3. In Finder, double-click **`FlowX.app`**.
+3. Double-click **`Launch FlowX.command`** or **`FlowX.app`**.
 
-No Terminal window. When you close the FlowX Chrome window, servers stop and the launcher exits.
+Both open a **Terminal window** briefly, start servers, then open the FlowX UI window.  
+Closing the UI window stops servers (default).
 
-**Gatekeeper:** If macOS blocks the app, right-click **FlowX.app** → **Open** once.
+### About `FlowX.app`
+
+macOS blocks unsigned `.app` bundles from running scripts directly inside `~/Documents` (`Operation not permitted`).  
+So **`FlowX.app` is a launcher**: it opens `Launch FlowX.command` → Terminal runs `launch.sh`.  
+It **can** start FlowX, but not silently without Terminal.
+
+The **FlowX icon** in Finder comes from `FlowX.app/Contents/Resources/FlowX.icns`.
+
+### Window icon (Dock)
+
+| `window_mode` in `config.json` | Dock / window icon |
+|-------------------------------|---------------------|
+| **`native`** (default) | **FlowX** — uses built-in WKWebView (`pywebview`) |
+| `app` | Chrome / Edge icon |
+| `browser` | Default browser tab |
+| `none` | No window (servers only) |
+
+First `native` launch installs `pywebview` into the backend venv.
+
+**Gatekeeper:** If blocked, right-click → **Open** once.
 
 ## Alternative: Terminal debug
 
 ```bash
-./launch.sh --show-frontend-window   # Vite logs in this Terminal
-./launch.sh --detach                 # return to prompt; stop with ./stop.sh
+./launch.sh --show-frontend-window
+./launch.sh --detach
 ```
-
-Legacy repo root `./start.sh` still works (Ctrl+C to stop).
 
 ## Stop manually
 
@@ -37,19 +54,18 @@ Legacy repo root `./start.sh` still works (Ctrl+C to stop).
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `python` | `""` | Optional explicit python3 path |
-| `window_mode` | `app` | `app` = app window; `browser` = default tab |
-| `auto_stop_on_close` | `true` | Closing app window runs `stop.sh` |
-
-Override: `NOTEBOOKFLOW_PYTHON`, `NOTEBOOKFLOW_NPM`.
+| `window_mode` | `native` | `native` / `app` / `browser` / `none` |
+| `auto_stop_on_close` | `true` | Closing window runs `stop.sh` |
 
 ## Logs
 
-`~/Library/Logs/FlowX/backend.log`, `frontend.log`
+`~/Library/Logs/FlowX/backend.log`, `frontend.log`, `launcher.log`
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `FlowX.app` | **Double-click** — no Terminal (like Windows `.vbs`) |
-| `Launch FlowX.command` | Opens `FlowX.app` (may flash Terminal briefly) |
-| `launch.sh` / `stop.sh` | Core logic |
+| `Launch FlowX.command` | **Recommended** double-click launcher |
+| `FlowX.app` | Same (opens `.command`); custom Finder icon |
+| `native_window.py` | Native macOS window shell |
+| `build-icon.sh` | Regenerate `FlowX.icns` from `icons/flowx-dock.svg` |

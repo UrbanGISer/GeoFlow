@@ -20,8 +20,8 @@
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
-  <key>LSUIElement</key>
-  <true/>
+  <key>CFBundleIconFile</key>
+  <string>FlowX</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

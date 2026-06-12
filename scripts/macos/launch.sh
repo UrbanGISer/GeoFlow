@@ -3,7 +3,7 @@
 # Closing the FlowX app window stops servers (unless --detach or browser mode).
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "${FLOWX_MACOS_DIR:-$(dirname "$0")}" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 BACKEND="$REPO_ROOT/notebookflow/backend"
 FRONTEND="$REPO_ROOT/notebookflow/frontend"
@@ -33,31 +33,33 @@ done
 BE_PORT=8000
 FE_PORT=5173
 OPEN_BROWSER=true
-WINDOW_MODE="app"
+WINDOW_MODE="native"
 AUTO_STOP=true
 
 if [[ -f "$CONFIG" ]]; then
-  # Avoid eval/repr — macOS bash 3.2 chokes on WINDOW_MODE='app' from Python !r.
+  # eval, not source <(...) — process substitution breaks config load on macOS bash.
   # shellcheck disable=SC1090
-  source <(python3 - "$CONFIG" <<'PY'
+  eval "$(python3 - "$CONFIG" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     c = json.load(f)
-wm = c.get("window_mode", "app")
-if wm not in ("app", "browser", "none"):
-    wm = "app"
+wm = c.get("window_mode", "native")
+if wm not in ("native", "app", "browser", "none"):
+    wm = "native"
 print("BE_PORT=%d" % int(c.get("backend_port", 8000)))
 print("FE_PORT=%d" % int(c.get("frontend_port", 5173)))
 print("OPEN_BROWSER=%s" % str(bool(c.get("open_browser", True))).lower())
 print("WINDOW_MODE=%s" % wm)
 print("AUTO_STOP=%s" % str(bool(c.get("auto_stop_on_close", True))).lower())
 PY
-  )
+  )"
 fi
 
 UI_URL="http://127.0.0.1:${FE_PORT}"
 
 info() { echo "[FlowX] $*"; }
+
+info "Window mode: $WINDOW_MODE"
 
 find_python() {
   if [[ -n "${NOTEBOOKFLOW_PYTHON:-}" && -x "$NOTEBOOKFLOW_PYTHON" ]]; then
@@ -78,7 +80,15 @@ PY
     return 0
   fi
   local candidate
+  # .app double-click has no shell profile — check venv + conda before system python3.
   for candidate in \
+    "$BACKEND/.venv/bin/python" \
+    /opt/anaconda3/bin/python3 \
+    /opt/anaconda3/bin/python \
+    "${CONDA_PREFIX:+$CONDA_PREFIX/bin/python3}" \
+    "${CONDA_PREFIX:+$CONDA_PREFIX/bin/python}" \
+    "$HOME/anaconda3/bin/python3" \
+    "$HOME/miniconda3/bin/python3" \
     /opt/homebrew/bin/python3 \
     /usr/local/bin/python3 \
     "$(command -v python3 2>/dev/null || true)"; do
@@ -121,8 +131,8 @@ wait_url() {
 }
 
 is_flowx_app_running() {
-  # Only the --app= process counts; profile-only Chrome helpers must not block exit.
-  ps aux 2>/dev/null | grep -E '[F]lowX/app-shell' | grep -E -- '--app=http://127\.0\.0\.1:[0-9]+' | grep -q .
+  # Main Chrome process: --app= and FlowX profile (order varies by launch path).
+  pgrep -f "Google Chrome --.*FlowX/app-shell" >/dev/null 2>&1
 }
 
 stop_flowx_chromium() {
@@ -131,7 +141,16 @@ stop_flowx_chromium() {
 
 wait_flowx_app_closed() {
   info "Close the FlowX window to stop backend and frontend."
-  sleep 2
+  local i=0
+  while (( i < 15 )); do
+    is_flowx_app_running && break
+    sleep 2
+    ((i++)) || true
+  done
+  if ! is_flowx_app_running; then
+    info "WARNING: App window not detected — servers stay up. Stop: ./stop.sh"
+    return 1
+  fi
   local gone=0
   while true; do
     if is_flowx_app_running; then
@@ -145,26 +164,51 @@ wait_flowx_app_closed() {
     sleep 2
   done
   stop_flowx_chromium
+  return 0
 }
 
 open_flowx_app() {
   mkdir -p "$FLOWX_PROFILE"
-  local chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  local edge="/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
   local args=(--new-window "--app=${UI_URL}" "--user-data-dir=${FLOWX_PROFILE}" --no-first-run --disable-extensions)
-  if [[ -x "$chrome" ]]; then
-    "$chrome" "${args[@]}" >/dev/null 2>&1 &
-    info "Opened app window via Google Chrome at ${UI_URL}"
-    return 0
+  if [[ -d "/Applications/Google Chrome.app" ]]; then
+    open -na "Google Chrome" --args "${args[@]}"
+    info "Opening app window via Google Chrome at ${UI_URL}"
+  elif [[ -d "/Applications/Microsoft Edge.app" ]]; then
+    open -na "Microsoft Edge" --args "${args[@]}"
+    info "Opening app window via Microsoft Edge at ${UI_URL}"
+  else
+    info "Chrome/Edge not found — opening default browser (no auto-stop)."
+    open "$UI_URL"
+    return 1
   fi
-  if [[ -x "$edge" ]]; then
-    "$edge" "${args[@]}" >/dev/null 2>&1 &
-    info "Opened app window via Microsoft Edge at ${UI_URL}"
-    return 0
-  fi
-  info "Chrome/Edge not found — opening default browser (no auto-stop)."
+  local i=0
+  while (( i < 20 )); do
+    if is_flowx_app_running; then
+      info "FlowX app window is open."
+      return 0
+    fi
+    sleep 0.5
+    ((i++)) || true
+  done
+  info "App window not confirmed — opening ${UI_URL} in default browser."
   open "$UI_URL"
   return 1
+}
+
+open_flowx_native() {
+  local icon="$HERE/FlowX.app/Contents/Resources/FlowX.icns"
+  [[ -f "$icon" ]] || icon=""
+  info "Opening native FlowX window (mode=$WINDOW_MODE) at ${UI_URL}"
+  python -c "import webview" 2>/dev/null || {
+    info "Installing pywebview (first run)..."
+    python -m pip install "pywebview>=6.2" pyobjc-framework-Cocoa pyobjc-framework-WebKit -q
+  }
+  if ! python -c "import webview" 2>/dev/null; then
+    info "ERROR: pywebview install failed — falling back to Chrome app window."
+    open_flowx_app
+    return $?
+  fi
+  python "$HERE/native_window.py" "$UI_URL" "${icon:-}"
 }
 
 _CLEANUP_DONE=false
@@ -182,10 +226,12 @@ cleanup_servers() {
 
 PY="$(find_python)" || {
   info "ERROR: Python 3.10+ not found. brew install python or set NOTEBOOKFLOW_PYTHON."
+  [[ "${FLOWX_FROM_APP:-}" == "1" ]] && osascript -e 'display alert "FlowX: Python 3.10+ not found" message "Install Python or set python in scripts/macos/config.json" as warning' 2>/dev/null || true
   exit 1
 }
 NPM="$(find_npm)" || {
   info "ERROR: npm not found. brew install node"
+  [[ "${FLOWX_FROM_APP:-}" == "1" ]] && osascript -e 'display alert "FlowX: npm not found" message "Install Node.js: brew install node" as warning' 2>/dev/null || true
   exit 1
 }
 
@@ -253,11 +299,19 @@ NODE_COUNT="$(curl -fsS "http://127.0.0.1:${BE_PORT}/api/nodes" 2>/dev/null | py
 info "Ready - ${NODE_COUNT} nodes in library."
 
 WATCH_APP=false
+NATIVE_BLOCK=false
 if [[ "$OPEN_BROWSER" == true && "$SKIP_BROWSER" == false ]]; then
   sleep 1
   if [[ "$USE_BROWSER" == true || "$WINDOW_MODE" == "browser" ]]; then
     open "$UI_URL"
     info "Opened in default browser. Use ./stop.sh to stop servers."
+  elif [[ "$WINDOW_MODE" == "native" ]]; then
+    if [[ "$AUTO_STOP" == true && "$DETACH" == false ]]; then
+      NATIVE_BLOCK=true
+    else
+      open_flowx_native &
+      info "Native window opened in background. Stop: ./stop.sh"
+    fi
   elif [[ "$WINDOW_MODE" != "none" ]]; then
     if open_flowx_app; then
       if [[ "$AUTO_STOP" == true && "$DETACH" == false ]]; then
@@ -267,12 +321,17 @@ if [[ "$OPEN_BROWSER" == true && "$SKIP_BROWSER" == false ]]; then
   fi
 fi
 
-if [[ "$WATCH_APP" == true ]]; then
-  trap cleanup_servers EXIT INT TERM
-  wait_flowx_app_closed
+if [[ "$NATIVE_BLOCK" == true ]]; then
+  open_flowx_native
   cleanup_servers
-  trap - EXIT INT TERM
   info "FlowX stopped."
+elif [[ "$WATCH_APP" == true ]]; then
+  if wait_flowx_app_closed; then
+    cleanup_servers
+    info "FlowX stopped."
+  else
+    info "FlowX servers still running. Stop: ./stop.sh"
+  fi
 elif [[ "$DETACH" == true || "$SKIP_BROWSER" == true ]]; then
   info "Servers running in background. Stop: ./stop.sh"
 else

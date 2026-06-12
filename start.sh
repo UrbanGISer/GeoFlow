@@ -22,6 +22,13 @@ find_python() {
     return 0
   fi
   for candidate in \
+    "$BACKEND/.venv/bin/python" \
+    /opt/anaconda3/bin/python3 \
+    /opt/anaconda3/bin/python \
+    "${CONDA_PREFIX:+$CONDA_PREFIX/bin/python3}" \
+    "${CONDA_PREFIX:+$CONDA_PREFIX/bin/python}" \
+    "$HOME/anaconda3/bin/python3" \
+    "$HOME/miniconda3/bin/python3" \
     /opt/homebrew/bin/python3 \
     /usr/local/bin/python3 \
     "$(command -v python3 2>/dev/null || true)"; do

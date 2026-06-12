@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
-# FlowX.app entry — runs launch.sh without Terminal (double-click in Finder).
+# FlowX.app entry — opens Launch FlowX.command (Terminal + launch.sh).
+# Direct .app cannot exec scripts in ~/Documents (macOS "Operation not permitted").
 set -euo pipefail
+
+LOG_DIR="$HOME/Library/Logs/FlowX"
+mkdir -p "$LOG_DIR"
+
 MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS_MACOS="$(cd "$MACOS_DIR/../../.." && pwd)"
-cd "$SCRIPTS_MACOS"
-exec ./launch.sh
+COMMAND="$SCRIPTS_MACOS/Launch FlowX.command"
+
+{
+  echo "=== FlowX.app $(date) -> Launch FlowX.command ==="
+} >>"$LOG_DIR/launcher.log"
+
+if [[ ! -x "$COMMAND" ]]; then
+  osascript -e 'display alert "FlowX not set up" message "Run: cd scripts/macos && chmod +x \"Launch FlowX.command\" launch.sh stop.sh"' 2>/dev/null || true
+  exit 1
+fi
+
+open "$COMMAND"

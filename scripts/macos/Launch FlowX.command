@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
-# Prefer double-clicking FlowX.app (no Terminal). This opens the app bundle.
-open "$(cd "$(dirname "$0")" && pwd)/FlowX.app"
+# Double-click launcher — opens Terminal and runs launch.sh (works in ~/Documents).
+cd "$(cd "$(dirname "$0")" && pwd)"
+export FLOWX_FROM_APP=1
+exec ./launch.sh

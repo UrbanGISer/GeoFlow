@@ -9,15 +9,14 @@ FE_PORT=5173
 LOG_DIR="$HOME/Library/Logs/FlowX"
 
 if [[ -f "$CONFIG" ]]; then
-  # shellcheck disable=SC1090
-  source <(python3 - "$CONFIG" <<'PY'
+  eval "$(python3 - "$CONFIG" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     c = json.load(f)
 print("BE_PORT=%d" % int(c.get("backend_port", 8000)))
 print("FE_PORT=%d" % int(c.get("frontend_port", 5173)))
 PY
-  )
+  )"
 fi
 
 kill_port() {
