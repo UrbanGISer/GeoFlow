@@ -38,11 +38,177 @@ body,
   flex-shrink: 0;
 }
 
+/* FlowX brand logo + title */
 .nf-brand {
-  font-weight: 700;
-  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  border-right: 1px solid #ccc;
+  flex-shrink: 0;
+  user-select: none;
 }
 
+.nf-brand-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1565c0;
+  letter-spacing: 0.02em;
+}
+
+/* Combined workflow tab bar + toolbar icon row */
+.nf-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: #e8e8e8;
+  border-bottom: 2px solid #c5c5c5;
+  flex-shrink: 0;
+  height: 32px;
+  overflow: hidden;
+}
+
+.nf-tab-list {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.nf-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-right: 1px solid #ccc;
+  background: transparent;
+  padding: 0 6px 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
+  height: 100%;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.nf-tab:hover {
+  background: #d8d8d8;
+  color: #222;
+}
+
+.nf-tab-active {
+  background: #fff;
+  color: #1976d2;
+  font-weight: 600;
+  border-top: 2px solid #1976d2;
+  margin-top: -1px;
+}
+
+.nf-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.nf-tab-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.nf-tab-close:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.12);
+}
+
+.nf-tab-add {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 12px;
+  font-size: 18px;
+  font-weight: 300;
+  color: #777;
+  cursor: pointer;
+  height: 100%;
+  line-height: 1;
+  transition: color 0.12s, background 0.12s;
+}
+
+.nf-tab-add:hover {
+  color: #1976d2;
+  background: #d8e8f8;
+}
+
+/* Toolbar icon buttons (right side of tab bar) */
+.nf-toolbar-icons {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 6px;
+  border-left: 1px solid #ccc;
+  flex-shrink: 0;
+}
+
+.nf-icon-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #444;
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.nf-icon-btn:hover {
+  background: #d8e8f8;
+  color: #1565c0;
+}
+
+.nf-icon-btn-run {
+  color: #1565c0;
+}
+
+.nf-icon-btn-run:hover {
+  background: #1976d2;
+  color: #fff;
+}
+
+.nf-icon-sep {
+  width: 1px;
+  height: 18px;
+  background: #ccc;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+.nf-btn-ai-sm {
+  padding: 3px 8px;
+  font-size: 12px;
+  height: 26px;
+  white-space: nowrap;
+}
+
+/* Legacy toolbar-actions (kept for any other usage) */
 .nf-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -341,6 +507,23 @@ body,
   background: #fff !important;
 }
 
+/* Canvas cursor: arrow on background pane only — do NOT target renderer/container
+   as that breaks ReactFlow's drag detection */
+.nf-flow-host .react-flow__pane {
+  cursor: default !important;
+}
+/* Remove ReactFlow's default black selection outline on all nodes */
+.nf-flow-host .react-flow__node.selected,
+.nf-flow-host .react-flow__node:focus,
+.nf-flow-host .react-flow__node:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.nf-flow-host .react-flow__node .nf-node-annotation,
+.nf-flow-host .react-flow__node .nf-node-annotation-edit {
+  cursor: text;
+}
+
 .nf-canvas-empty {
   position: absolute;
   inset: 0;
@@ -401,6 +584,33 @@ body,
   flex: 1;
   overflow: auto;
   padding: 10px 12px;
+}
+
+/* Multi-port tab bar for Input bar nodes */
+.nf-port-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 12px 0;
+  border-bottom: 1px solid #eee;
+  background: #fafafa;
+}
+.nf-port-tab {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: #f0f0f0;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.15s;
+}
+.nf-port-tab:hover { background: #e0e0e0; }
+.nf-port-tab--active {
+  background: #fff;
+  color: #1a237e;
+  font-weight: 600;
+  border-color: #bbb;
 }
 
 .nf-muted {
@@ -682,17 +892,19 @@ body,
 }
 
 /* Flow nodes: square + caption below */
+/* Node root is sized to the icon only; labels are absolutely positioned outside */
 .nf-flow-node-root {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  position: relative;
+  width: 40px;
+  /* height set via inline style matching coreHeight */
+  overflow: visible;
 }
 
 .nf-flow-node-core {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 40px;
-  height: 40px;
+  /* height matches parent via inset:0 */
 }
 
 .nf-flow-node-square {
@@ -717,7 +929,9 @@ body,
 }
 
 .nf-flow-node-square--error {
-  box-shadow: 0 0 0 2px #c62828;
+  border-color: #e65100;
+  border-width: 3px;
+  box-shadow: 0 0 0 2px #ff6d00;
 }
 
 .nf-flow-node-caption {
@@ -1244,10 +1458,12 @@ body,
   overflow: hidden;
 }
 
-.nf-tab-bar {
+.nf-ai-studio-tools .nf-tab-bar {
   display: flex;
   border-bottom: 1px solid #e0e0e0;
   background: #f8f8f8;
+  height: auto;
+  overflow: visible;
 }
 
 .nf-tab-btn {
@@ -1355,6 +1571,11 @@ body,
   font-size: 11px;
   color: #999;
 }
+.nf-ctx-separator {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 3px 0;
+}
 
 /* ── KNIME-style triangle ports ───────────────────────────────────────────── */
 /* Input: ◀ apex points left, right edge touches the node's left side.
@@ -1381,6 +1602,26 @@ body,
   right: -10px;
   transform: translate(0, -50%);
   clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+
+/* Image port handles — green square (both input and output) */
+.nf-handle-img-in.react-flow__handle-left {
+  left: -10px;
+  transform: translate(0, -50%);
+  width: 10px;
+  height: 10px;
+  background: #2e7d32;
+  border-radius: 2px;
+  clip-path: none;
+}
+.nf-handle-img-out.react-flow__handle-right {
+  right: -10px;
+  transform: translate(0, -50%);
+  width: 10px;
+  height: 10px;
+  background: #43a047;
+  border-radius: 2px;
+  clip-path: none;
 }
 
 /* ── Dynamic input ports: click port → +/− popover ────────────────────────── */
@@ -1434,12 +1675,38 @@ body,
   color: #fff;
 }
 
+.nf-port-strip-right {
+  left: auto;
+  right: -4px;
+}
+
+.nf-port-popover-left {
+  left: -38px;
+  right: auto;
+}
+
+.nf-port-popover-right {
+  right: -38px;
+  left: auto;
+}
+
 /* ── Node label (top) + editable note (bottom), KNIME style ───────────────── */
 .nf-flow-node-caption-top {
-  margin-bottom: 3px;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 
 .nf-node-annotation {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   width: 120px; /* 3 × node box */
   min-height: 12px;
   margin-top: 3px;
@@ -1458,6 +1725,10 @@ body,
 }
 
 .nf-node-annotation-edit {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   width: 120px;
   margin-top: 3px;
   font-size: 11px;
@@ -1469,6 +1740,7 @@ body,
   padding: 2px 3px;
   font-family: inherit;
   background: #fff;
+  z-index: 10;
 }
 
 /* ── Canvas text box (annotation node) ────────────────────────────────────── */
@@ -1895,3 +2167,571 @@ body,
   font-size: 11px;
 }
 
+
+/* Node picker (right-click "Add Node" on canvas) */
+.nf-node-picker {
+  position: fixed;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  width: 280px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nf-node-picker-header {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+}
+
+.nf-node-picker-header .nf-search-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nf-node-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.nf-node-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 12px 5px 14px;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  gap: 8px;
+}
+
+.nf-node-picker-item:hover {
+  background: #f0f4ff;
+}
+
+.nf-node-picker-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nf-node-picker-cat {
+  font-size: 11px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+/* ─── GeoView layer styles editor ───────────────────────────────────────── */
+.nf-geo-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nf-geo-layer {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.nf-geo-layer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+.nf-geo-layer-swatch {
+  width: 28px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+  flex-shrink: 0;
+  background-size: cover;
+}
+.nf-geo-layer-title {
+  font-weight: 600;
+  color: #333;
+}
+.nf-geo-layer-body {
+  padding: 4px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid #e5e5e5;
+}
+.nf-field-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.nf-geo-layer-body input[type="color"] {
+  width: 100%;
+  height: 26px;
+  padding: 1px 2px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.nf-geo-layer-body input[type="range"] {
+  width: 100%;
+}
+.nf-cmap-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.nf-cmap-select {
+  flex: 1;
+  min-width: 0;
+}
+.nf-cmap-preview {
+  width: 80px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+  flex-shrink: 0;
+  background-size: cover;
+  display: inline-block;
+}
+
+/* ── CmapSelect custom dropdown ───────────────────────────────────────────── */
+.nf-cmap-picker {
+  position: relative;
+  width: 100%;
+}
+.nf-cmap-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+.nf-cmap-trigger:hover { border-color: #888; }
+.nf-cmap-trigger-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nf-cmap-bar-sm {
+  display: inline-block;
+  width: 60px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,.1);
+}
+.nf-cmap-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  z-index: 200;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.nf-cmap-group { padding: 0; }
+.nf-cmap-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 6px 10px 2px;
+  border-top: 1px solid #eee;
+}
+.nf-cmap-group:first-child .nf-cmap-group-label { border-top: none; }
+.nf-cmap-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+.nf-cmap-option:hover { background: #f0f4ff; }
+.nf-cmap-option-active { background: #e8f0fe; font-weight: 600; }
+
+/* ── GeoViewParamsEditor sections ─────────────────────────────────────────── */
+.nf-gvp {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 6px;
+}
+.nf-gvp-section {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.nf-gvp-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: #f5f5f5;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  color: #333;
+}
+.nf-gvp-section-head:hover { background: #ebebeb; }
+.nf-gvp-section-title { flex: 1; }
+.nf-gvp-section-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nf-field-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.nf-save-path-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.nf-field-hint-inline {
+  font-weight: 400;
+  color: #888;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+/* ── Group / Component node caption modifier (selected state) ──────────── */
+.nf-group-caption--selected { color: #7b1fa2; font-weight: 700; }
+
+/* ── Group / Component node (legacy large-node styles, kept for reference) ── */
+/* ── Group / Component nodes ────────────────────────────────────────────── */
+.nf-group-node {
+  min-width: 120px;
+  border: 2px solid #7b1fa2;
+  border-radius: 8px;
+  background: #f3e5f5;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(123,31,162,.15);
+}
+/* Group = dashed border */
+.nf-group-node--group { border-style: dashed; }
+/* Component = solid border (default) */
+.nf-group-node--component { border-style: solid; background: #ede7f6; }
+.nf-group-node--selected { border-color: #4a148c; box-shadow: 0 0 0 3px rgba(123,31,162,.3); }
+.nf-group-node-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 18px 8px;
+  gap: 1px;
+}
+.nf-group-node-type {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #9c27b0;
+  margin-bottom: 2px;
+}
+.nf-group-node-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a148c;
+  text-align: center;
+}
+.nf-group-node-subtitle {
+  font-size: 10px;
+  color: #7b1fa2;
+  text-align: center;
+  opacity: 0.8;
+}
+
+/* ── Group bar nodes (IN / OUT bars inside subflow) ─────────────────────── */
+.nf-bar-node {
+  width: 38px;
+  border-radius: 6px;
+  border: 2px solid #7b1fa2;
+  background: #ede7f6;
+  cursor: default;
+  user-select: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.nf-bar-node--in  { border-color: #388e3c; background: #e8f5e9; }
+.nf-bar-node--out { border-color: #c62828; background: #ffebee; }
+.nf-bar-node--selected { box-shadow: 0 0 0 2px rgba(123,31,162,.35); }
+.nf-bar-node-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #4a148c;
+  text-transform: uppercase;
+  padding-top: 6px;
+  pointer-events: none;
+}
+.nf-bar-node--in  .nf-bar-node-label { color: #1b5e20; }
+.nf-bar-node--out .nf-bar-node-label { color: #b71c1c; }
+.nf-bar-port-row {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: center;
+  height: 20px;
+}
+.nf-bar-port-num {
+  font-size: 9px;
+  font-weight: 600;
+  color: #555;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* ── Breadcrumb navigation bar ─────────────────────────────────────────────── */
+.nf-breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  background: #ede7f6;
+  border-bottom: 1px solid #ce93d8;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.nf-breadcrumb-item {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6a1b9a;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 4px;
+  border-radius: 4px;
+  text-decoration: underline;
+}
+.nf-breadcrumb-item:hover { background: rgba(123,31,162,.1); }
+.nf-breadcrumb-current {
+  color: #333;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: default;
+  padding: 2px 4px;
+}
+.nf-breadcrumb-sep-item { display: flex; align-items: center; gap: 2px; }
+.nf-breadcrumb-sep { color: #9e9e9e; margin: 0 2px; }
+.nf-breadcrumb-exit-btn {
+  margin-left: auto;
+  background: #7b1fa2;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nf-breadcrumb-exit-btn:hover { background: #4a148c; }
+
+/* ── Report Builder Editor ────────────────────────────────────────────────── */
+.nf-rb-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 12px;
+}
+.nf-rb-global {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e0e0e0;
+}
+.nf-rb-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 0;
+}
+.nf-rb-section {
+  border-bottom: 1px solid #ececec;
+  padding: 8px 10px 4px;
+}
+.nf-rb-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.nf-rb-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  flex: 1;
+}
+.nf-rb-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nf-rb-cols-btn {
+  width: 22px;
+  height: 20px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #444;
+}
+.nf-rb-cols-btn:hover { background: #f0f0f0; }
+.nf-rb-cols-btn--active { background: #1976d2; color: #fff; border-color: #1976d2; }
+.nf-rb-icon-btn {
+  width: 22px;
+  height: 20px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.nf-rb-icon-btn:hover { background: #f0f0f0; }
+.nf-rb-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.nf-rb-remove-btn { color: #c62828; }
+.nf-rb-remove-btn:hover { background: #ffebee; }
+.nf-rb-cells {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.nf-rb-cell-editor {
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  background: #fff;
+  overflow: hidden;
+}
+.nf-rb-cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e8e8e8;
+  gap: 4px;
+}
+.nf-rb-cell-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 7px;
+}
+.nf-rb-cell-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  background: #fafafa;
+  border-top: 1px solid #f0f0f0;
+}
+.nf-rb-field-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.nf-rb-label {
+  font-size: 10px;
+  color: #777;
+  white-space: nowrap;
+  min-width: 28px;
+}
+.nf-rb-add-cell-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0 4px;
+}
+.nf-rb-add-cell-btn {
+  font-size: 10px;
+  color: #1976d2;
+  background: none;
+  border: 1px solid #90caf9;
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.nf-rb-add-cell-btn:hover { background: #e3f2fd; }
+.nf-rb-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+}
+.nf-rb-add-row-btn {
+  font-size: 11px;
+  color: #1976d2;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.nf-rb-add-row-btn:hover { background: #bbdefb; }
+
+/* Join table editor */
+.nf-join-editor { display: flex; flex-direction: column; gap: 6px; }
+.nf-collapsible { border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; }
+.nf-collapsible-header {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%; padding: 6px 10px; background: #f5f5f5;
+  border: none; cursor: pointer; font-size: 12px; font-weight: 600; color: #444;
+}
+.nf-collapsible-header:hover { background: #eeeeee; }
+.nf-collapsible-arrow { font-size: 11px; }
+.nf-collapsible-body { padding: 8px 10px; max-height: 200px; overflow-y: auto; }

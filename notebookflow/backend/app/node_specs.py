@@ -137,20 +137,35 @@ df_out = df_in.sort_values(col, ascending=asc).reset_index(drop=True)
 """
 
 JOIN_CODE = """\
-import pandas as pd
 left_on = params.get("left_on")
 right_on = params.get("right_on") or left_on
 how = params.get("how", "inner")
-if df_in_2 is not None:
-    df_right = df_in_2
+right_file_path = params.get("right_file_path")
+left_cols = params.get("left_columns") or []
+right_cols = params.get("right_columns") or []
+
+if df_in_2 is None or df_in_2.empty:
+    if not right_file_path:
+        raise ValueError("Connect a right table or set right_file_path.")
+    import pandas as _pd
+    df_right = _pd.read_csv(right_file_path)
 else:
-    right_path = params.get("right_file_path")
-    if not right_path:
-        raise ValueError("Connect a second input table (right port) or set right_file_path.")
-    df_right = pd.read_csv(right_path)
+    df_right = df_in_2
+
 if not left_on:
-    raise ValueError("Provide left_on (join key column).")
-df_out = df_in.merge(df_right, left_on=left_on, right_on=right_on, how=how)
+    raise ValueError("Select a left join key column.")
+
+df_left = df_in.copy()
+if left_cols:
+    keep_left = list({left_on} | set(left_cols))
+    df_left = df_left[[c for c in keep_left if c in df_left.columns]]
+
+df_right = df_right.copy()
+if right_cols:
+    keep_right = list({right_on} | set(right_cols))
+    df_right = df_right[[c for c in keep_right if c in df_right.columns]]
+
+df_out = df_left.merge(df_right, left_on=left_on, right_on=right_on, how=how)
 """
 
 RENAME_CODE = """\
@@ -311,13 +326,44 @@ html_out = m.get_root().render()
 GEO_VIEW_CODE = """\
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+import pandas as pd
+
 title = params.get("title", "")
 dpi = int(params.get("dpi", 200))
-cmap = params.get("cmap", "viridis")
-color_col = params.get("color_column") or None
-save_path = params.get("save_path") or None
-layer_colors = ["#1976d2", "#e53935", "#2e7d32", "#f9a825", "#8e24aa",
-                "#00838f", "#6d4c41", "#c2185b"]
+axis_off = bool(params.get("axis_off", True))
+fig_w = float(params.get("fig_width", 10) or 10)
+fig_h = float(params.get("fig_height", 8) or 8)
+layer_styles = params.get("layers") or []
+basemap = params.get("basemap", "none") or "none"
+basemap_alpha = float(params.get("basemap_alpha", 0.5) or 0.5)
+
+_BASEMAP_SOURCES = {
+    "osm":            "OpenStreetMap.Mapnik",
+    "satellite":      "Esri.WorldImagery",
+    "topo":           "OpenTopoMap",
+    "cartodb_light":  "CartoDB.Positron",
+    "cartodb_dark":   "CartoDB.DarkMatter",
+    "stamen_terrain": "Stadia.StamenTerrain",
+    "stamen_toner":   "Stadia.StamenToner",
+}
+
+legend_show = bool(params.get("legend_show", True))
+legend_loc = params.get("legend_loc", "best") or "best"
+legend_fontsize = float(params.get("legend_fontsize", 10) or 10)
+legend_frame = bool(params.get("legend_frame", True))
+_bbox_raw = str(params.get("legend_bbox") or "").strip()
+legend_bbox = None
+if _bbox_raw:
+    parts = [float(x) for x in _bbox_raw.replace(";", ",").split(",") if x.strip()]
+    if len(parts) == 2:
+        legend_bbox = tuple(parts)
+
+default_colors = ["#1976d2", "#e53935", "#2e7d32", "#f9a825", "#8e24aa",
+                  "#00838f", "#6d4c41", "#c2185b"]
+
 layers = []
 crs = None
 for i, gdf in enumerate(df_ins):
@@ -335,29 +381,122 @@ for i, gdf in enumerate(df_ins):
     layers.append((i, layer))
 if not layers:
     raise ValueError("GeoView requires at least one connected GeoDataFrame input.")
-fig, ax = plt.subplots(figsize=(10, 8), dpi=dpi)
+
+fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
+ax = fig.add_subplot(111)
+
+legend_kwds = {"loc": legend_loc, "fontsize": legend_fontsize, "frameon": legend_frame}
+if legend_bbox:
+    legend_kwds["bbox_to_anchor"] = legend_bbox
+
+manual_handles = []
+has_column_legend = False
 # Inputs are drawn bottom-to-top: port 1 is the bottom layer.
 for i, layer in layers:
-    if color_col and color_col in layer.columns:
-        layer.plot(ax=ax, column=color_col, cmap=cmap, legend=True,
-                   edgecolor="#333", linewidth=0.4)
+    st = layer_styles[i] if i < len(layer_styles) and isinstance(layer_styles[i], dict) else {}
+    label = st.get("label") or f"Layer {i + 1}"
+    col = st.get("column") or None
+    mode = st.get("mode", "auto")
+    cmap = st.get("cmap", "viridis")
+    fill = st.get("fill_color") or default_colors[i % len(default_colors)]
+    fill_alpha = float(st.get("fill_alpha", 0.75))
+    edge_color = st.get("edge_color", "#333333")
+    edge_width = float(st.get("edge_width", 0.4))
+    edge_alpha = float(st.get("edge_alpha", 1.0))
+    marker_size = float(st.get("marker_size", 20))
+
+    geom_types = set(layer.geometry.geom_type.dropna().unique())
+    is_point = geom_types <= {"Point", "MultiPoint"}
+    is_line = geom_types <= {"LineString", "MultiLineString"}
+
+    kw = {"ax": ax, "edgecolor": to_rgba(edge_color, edge_alpha), "linewidth": edge_width}
+    if is_point:
+        kw["markersize"] = marker_size
+
+    if col and col in layer.columns:
+        # Schemes that accept a k (number-of-classes) parameter
+        _schemes_with_k = {
+            "EqualInterval", "FisherJenks", "FisherJenksSampled",
+            "JenksCaspall", "JenksCaspallForced", "JenksCaspallSampled",
+            "MaximumBreaks", "NaturalBreaks", "Quantiles", "StdMean",
+        }
+        is_numeric = pd.api.types.is_numeric_dtype(layer[col])
+        scheme_raw = st.get("scheme") or None
+        k = int(st.get("k", 5) or 5)
+
+        if not is_numeric:
+            # String / categorical column — always use categorical legend
+            layer.plot(column=col, cmap=cmap, categorical=True,
+                       legend=legend_show, alpha=fill_alpha,
+                       legend_kwds=legend_kwds if legend_show else {},
+                       **kw)
+        elif mode == "continuous":
+            # Smooth colorbar — no classification
+            layer.plot(column=col, cmap=cmap,
+                       legend=legend_show, alpha=fill_alpha,
+                       legend_kwds={"shrink": 0.6, "label": col} if legend_show else {},
+                       **kw)
+        else:
+            # class mode (or auto with numeric column) → mapclassify
+            scheme = scheme_raw or "NaturalBreaks"
+            cls_kw = {"k": k} if scheme in _schemes_with_k else {}
+            layer.plot(column=col, cmap=cmap, scheme=scheme,
+                       legend=legend_show, alpha=fill_alpha,
+                       legend_kwds=legend_kwds if legend_show else {},
+                       classification_kwds=cls_kw,
+                       **kw)
+        if legend_show:
+            has_column_legend = True
     else:
-        layer.plot(ax=ax, color=layer_colors[i % len(layer_colors)],
-                   edgecolor="#333", linewidth=0.4, alpha=0.75)
-ax.set_axis_off()
+        if is_line:
+            layer.plot(color=to_rgba(fill, fill_alpha), linewidth=max(edge_width, 0.8),
+                       ax=ax)
+            manual_handles.append(Line2D([0], [0], color=to_rgba(fill, fill_alpha),
+                                         lw=max(edge_width, 0.8), label=label))
+        else:
+            layer.plot(color=to_rgba(fill, fill_alpha), **kw)
+            if is_point:
+                manual_handles.append(Line2D([0], [0], marker="o", linestyle="",
+                                             markerfacecolor=to_rgba(fill, fill_alpha),
+                                             markeredgecolor=to_rgba(edge_color, edge_alpha),
+                                             markersize=8, label=label))
+            else:
+                manual_handles.append(Patch(facecolor=to_rgba(fill, fill_alpha),
+                                            edgecolor=to_rgba(edge_color, edge_alpha),
+                                            linewidth=edge_width, label=label))
+
+# A column-driven legend (geopandas) takes priority; otherwise build one
+# from the plain layers' handles.
+if legend_show and manual_handles and not has_column_legend:
+    ax.legend(handles=manual_handles, **legend_kwds)
+
+# Basemap via contextily (tiles must be fetched in Web Mercator)
+if basemap != "none":
+    try:
+        import contextily as cx
+        src_name = _BASEMAP_SOURCES.get(basemap, "OpenStreetMap.Mapnik")
+        # Split "Provider.Style" → cx.providers.Provider.Style
+        _parts = src_name.split(".", 1)
+        provider = getattr(getattr(cx.providers, _parts[0]), _parts[1]) if len(_parts) == 2 else getattr(cx.providers, src_name)
+        cx.add_basemap(ax, source=provider, alpha=basemap_alpha,
+                       crs=(crs.to_string() if crs else "EPSG:4326"),
+                       reset_extent=False)
+    except Exception as _bme:
+        ax.set_title(f"[basemap error: {_bme}]", fontsize=9, color="red", loc="right")
+
+if axis_off:
+    ax.set_axis_off()
 if title:
     ax.set_title(title, fontsize=13, fontweight="bold")
 plt.tight_layout()
-import io, base64, pathlib
+
+import io, base64
+
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
-if save_path:
-    p = pathlib.Path(save_path)
-    if p.suffix.lower() != ".png":
-        p = p.with_suffix(".png")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(buf.getvalue())
 plt.close(fig)
+
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
@@ -418,6 +557,7 @@ import io, base64
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
@@ -447,6 +587,7 @@ import io, base64
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
@@ -475,6 +616,7 @@ import io, base64
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
@@ -508,6 +650,7 @@ import io, base64
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
@@ -549,9 +692,171 @@ import io, base64
 buf = io.BytesIO()
 fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
+img_out = buf.getvalue()
 html_out = ('<img src="data:image/png;base64,' +
             base64.b64encode(buf.getvalue()).decode() +
             '" style="max-width:100%;height:auto;" />')
+"""
+
+# ─── Image Nodes ─────────────────────────────────────────────────────────────
+
+IMAGE_EXPORTER_CODE = """\
+import shutil, pathlib
+if img_in_path is None:
+    raise ValueError("Connect an image source to the img_in port.")
+save_path = params.get("save_path", "")
+if not save_path:
+    raise ValueError("Specify save_path in parameters.")
+dest = pathlib.Path(save_path)
+if dest.suffix.lower() not in (".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"):
+    dest = dest.with_suffix(".png")
+dest.parent.mkdir(parents=True, exist_ok=True)
+src = pathlib.Path(img_in_path)
+try:
+    from PIL import Image as _PILImage
+    fmt_map = {".jpg": "JPEG", ".jpeg": "JPEG", ".tiff": "TIFF", ".tif": "TIFF", ".bmp": "BMP"}
+    out_fmt = fmt_map.get(dest.suffix.lower())
+    if out_fmt:
+        quality = int(params.get("quality", 90) or 90)
+        with _PILImage.open(str(src)) as _im:
+            _im_rgb = _im.convert("RGB") if out_fmt == "JPEG" else _im
+            _im_rgb.save(str(dest), format=out_fmt, quality=quality if out_fmt == "JPEG" else None)
+    else:
+        shutil.copy2(str(src), str(dest))
+except ImportError:
+    shutil.copy2(str(src), str(dest))
+html_out = (
+    '<div style="font-family:monospace;padding:10px 14px;background:#f5f5f5;'
+    'border-radius:6px;font-size:13px;">'
+    '<span style="color:#2e7d32;">✓</span> Saved to<br>'
+    f'<strong style="word-break:break-all;">{dest}</strong></div>'
+)
+"""
+
+REPORT_BUILDER_CODE = """\
+import base64 as _b64mod, pathlib as _plmod
+from html import escape as _hesc
+
+_title = str(params.get("title", "Report"))
+_accent = str(params.get("accent_color", "#1976d2"))
+_sections = params.get("sections") or []
+
+# Build port→path lookup (avoid comprehensions: exec two-dict scope issue)
+_raw_paths = []
+if img_in_path:
+    _raw_paths.append(img_in_path)
+if img_ins_paths:
+    for _xp in img_ins_paths:
+        if _xp not in _raw_paths:
+            _raw_paths.append(_xp)
+_port_map = {}
+for _xi in range(len(_raw_paths)):
+    _port_map[_xi + 1] = _raw_paths[_xi]
+
+# ─── NO def blocks below — all inline (exec two-dict scope prevents closures) ───
+_rows_html = ""
+for _sec in _sections:
+    _cols = _sec.get("columns") or []
+    if not _cols:
+        continue
+    _nc = len(_cols)
+    _pct = str(100 // _nc)
+    _gap = str(int(_sec.get("gap", 0)))
+    _sbg = _sec.get("bg", "")
+    _sst = ("background:" + _sbg + ";" if _sbg else "")
+    _tds = ""
+    for _cell in _cols:
+        _ct = _cell.get("type", "text")
+        _cbg = _cell.get("bg", "")
+        _cpad = str(int(_cell.get("padding", 12)))
+        _bs = "padding:" + _cpad + "px;" + ("background:" + _cbg + ";" if _cbg else "") + "width:100%;box-sizing:border-box;height:100%;"
+        if _ct == "heading":
+            _tx = _hesc(str(_cell.get("content", "")))
+            _fs = str(int(_cell.get("fontSize", 18)))
+            _fc = str(_cell.get("fontColor", "#222"))
+            _ta = str(_cell.get("textAlign", "left"))
+            _ds = ("border-bottom:2px solid " + _accent + ";padding-bottom:6px;margin-bottom:4px;" if _cell.get("showDivider", True) else "")
+            _ch = '<div style="' + _bs + '"><h2 style="' + _ds + 'font-size:' + _fs + 'px;color:' + _fc + ';text-align:' + _ta + ';margin:0;font-weight:bold;">' + _tx + '</h2></div>'
+        elif _ct == "image":
+            _port = int(_cell.get("imgPort", 1))
+            _ipath = _port_map.get(_port)
+            _cap = _hesc(str(_cell.get("caption", "")))
+            _fit = str(_cell.get("fit", "contain"))
+            if _ipath and _plmod.Path(_ipath).exists():
+                _imgraw = _plmod.Path(_ipath).read_bytes()
+                _b64v = _b64mod.b64encode(_imgraw).decode()
+                _caph = ('<p style="font-size:11px;color:#666;text-align:center;margin:6px 0 0;">' + _cap + '</p>' if _cap else "")
+                _ch = '<div style="' + _bs + 'text-align:center;"><img src="data:image/png;base64,' + _b64v + '" style="max-width:100%;height:auto;object-fit:' + _fit + ';" />' + _caph + '</div>'
+            else:
+                _ch = '<div style="' + _bs + 'background:#f0f0f0;min-height:100px;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px;">img_in_' + str(_port) + ' not connected</div>'
+        else:
+            _rt = str(_cell.get("content", ""))
+            _fs = str(int(_cell.get("fontSize", 13)))
+            _fc = str(_cell.get("fontColor", "#333"))
+            _ta = str(_cell.get("textAlign", "left"))
+            _lh = str(_cell.get("lineHeight", 1.6))
+            _et = _hesc(_rt).replace("\\n", "<br>")
+            _ch = '<div style="' + _bs + 'font-size:' + _fs + 'px;color:' + _fc + ';text-align:' + _ta + ';line-height:' + _lh + ';">' + _et + '</div>'
+        _tds += '<td style="vertical-align:top;width:' + _pct + '%;padding-right:' + _gap + 'px;">' + _ch + '</td>'
+    _rows_html += '<tr style="' + _sst + '">' + _tds + '</tr>'
+
+html_out = (
+    '<div style="font-family:sans-serif;max-width:960px;margin:0 auto;padding:28px;background:#fff;">'
+    '<h1 style="font-size:22px;font-weight:bold;color:#111;border-bottom:3px solid ' + _accent + ';padding-bottom:10px;margin:0 0 20px;">'
+    + _hesc(_title) +
+    '</h1>'
+    '<table style="border-collapse:collapse;width:100%;">' + _rows_html + '</table>'
+    '</div>'
+)
+"""
+
+LLM_VISION_CODE = """\
+import base64, pathlib
+try:
+    from openai import OpenAI as _OpenAI
+except ImportError:
+    raise ImportError("openai package is required: pip install openai")
+
+if img_in_path is None:
+    raise ValueError("Connect an image source to the img_in port.")
+if not pathlib.Path(img_in_path).exists():
+    raise FileNotFoundError(f"Image artifact not found: {img_in_path} — run the upstream visualization node first.")
+
+prompt = params.get("prompt", "Describe what you see in this image in detail.")
+base_url = params.get("base_url", "https://generativelanguage.googleapis.com/v1beta/openai/")
+api_key = params.get("api_key", "")
+model = params.get("model", "gemini-2.5-flash")
+if not api_key:
+    raise ValueError("Set api_key in LLM Vision node parameters (or use the AI Studio tab key).")
+
+img_bytes = pathlib.Path(img_in_path).read_bytes()
+b64 = base64.b64encode(img_bytes).decode()
+
+_client = _OpenAI(base_url=base_url, api_key=api_key)
+_resp = _client.chat.completions.create(
+    model=model,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            {"type": "text", "text": prompt},
+        ],
+    }],
+    max_tokens=2048,
+)
+_analysis = _resp.choices[0].message.content or ""
+
+import html as _html_mod
+html_out = (
+    '<div style="font-family:sans-serif;padding:16px;max-width:800px;">'
+    '<h3 style="font-size:14px;font-weight:bold;color:#444;margin:0 0 10px;">LLM Vision Analysis</h3>'
+    '<div style="background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;padding:12px;'
+    'font-size:13px;line-height:1.65;white-space:pre-wrap;">'
+    + _html_mod.escape(_analysis) +
+    '</div>'
+    f'<p style="font-size:11px;color:#aaa;margin-top:8px;">Model: {model}</p>'
+    '</div>'
+)
 """
 
 # ─── Python Script ────────────────────────────────────────────────────────────
@@ -677,11 +982,13 @@ NODE_SPECS: list[NodeSpec] = [
         outputs={"df_out": {"type": "DataFrame"}},
         parameters=[
             _ps("left_on", "column", required=True),
-            _ps("right_on", "string", default=""),
+            _ps("right_on", "column_right", required=True),
             _ps("right_file_path", "file"),
             _ps("how", "enum", default="inner", options=["inner", "left", "right", "outer"]),
+            _ps("left_columns", "column_list", default=None),
+            _ps("right_columns", "column_list_right", default=None),
         ],
-        default_params={"left_on": None, "right_on": "", "right_file_path": None, "how": "inner"},
+        default_params={"left_on": None, "right_on": None, "right_file_path": None, "how": "inner", "left_columns": None, "right_columns": None},
         default_code=JOIN_CODE,
     ),
     NodeSpec(
@@ -846,26 +1153,45 @@ NODE_SPECS: list[NodeSpec] = [
         default_code=GEOMAP_CODE,
     ),
     NodeSpec(
-        id="geo_view", name="geo_view", label="GeoView (PNG)", category="Visualization", color="#42a5f5",
+        id="geo_view", name="geo_view", label="GeoView", category="Visualization", color="#42a5f5",
         inputs={"df_in": {"type": "DataFrame", "label": "layer 1"}},
-        outputs={"html_out": {"type": "HTML"}},
+        outputs={"html_out": {"type": "HTML"}, "img_out": {"type": "Image", "label": "PNG image"}},
         dynamic_inputs=True,
         parameters=[
+            _ps("layers", "geo_layers", default=[]),
             _ps("title", "string", default=""),
-            _ps("color_column", "column", default=""),
-            _ps("cmap", "enum", default="viridis",
-                options=["viridis", "plasma", "coolwarm", "YlOrRd", "Blues", "Greens"]),
+            _ps("axis_off", "boolean", default=True),
+            _ps("fig_width", "number", default=10),
+            _ps("fig_height", "number", default=8),
+            _ps("legend_show", "boolean", default=True),
+            _ps("legend_loc", "enum", default="best",
+                options=["best", "upper right", "upper left", "lower right", "lower left",
+                         "center right", "center left", "upper center", "lower center", "center"]),
+            _ps("legend_fontsize", "number", default=10),
+            _ps("legend_frame", "boolean", default=True),
+            _ps("legend_bbox", "string", default=""),
+            _ps("basemap", "enum", default="none",
+                options=["none", "osm", "satellite", "topo",
+                         "cartodb_light", "cartodb_dark",
+                         "stamen_terrain", "stamen_toner"]),
+            _ps("basemap_alpha", "number", default=0.5),
             _ps("dpi", "number", default=200),
-            _ps("save_path", "string", default=""),
         ],
-        default_params={"title": "", "color_column": "", "cmap": "viridis", "dpi": 200, "save_path": ""},
+        default_params={
+            "layers": [], "title": "", "axis_off": True,
+            "fig_width": 10, "fig_height": 8,
+            "legend_show": True, "legend_loc": "best", "legend_fontsize": 10,
+            "legend_frame": True, "legend_bbox": "",
+            "basemap": "none", "basemap_alpha": 0.5,
+            "dpi": 200,
+        },
         default_code=GEO_VIEW_CODE,
     ),
 
     # ── Nature View ───────────────────────────────────────────────────────────
     NodeSpec(
         id="nature_boxplot", name="nature_boxplot", label="Box Plot", category="Nature View", color="#2e7d32",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}},
+        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}, "img_out": {"type": "Image"}},
         parameters=[
             _ps("y_column", "column", required=True),
             _ps("x_column", "column", default=""),
@@ -877,7 +1203,7 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="nature_violin", name="nature_violin", label="Violin Plot", category="Nature View", color="#2e7d32",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}},
+        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}, "img_out": {"type": "Image"}},
         parameters=[
             _ps("y_column", "column", required=True),
             _ps("x_column", "column", default=""),
@@ -889,7 +1215,7 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="nature_heatmap", name="nature_heatmap", label="Heatmap", category="Nature View", color="#2e7d32",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}},
+        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}, "img_out": {"type": "Image"}},
         parameters=[
             _ps("x_column", "column", default=""),
             _ps("y_column", "column", default=""),
@@ -903,7 +1229,7 @@ NODE_SPECS: list[NodeSpec] = [
     ),
     NodeSpec(
         id="nature_ridgeplot", name="nature_ridgeplot", label="Ridge Plot", category="Nature View", color="#2e7d32",
-        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}},
+        inputs={"df_in": {"type": "DataFrame"}}, outputs={"html_out": {"type": "HTML"}, "img_out": {"type": "Image"}},
         parameters=[
             _ps("group_column", "column", required=True),
             _ps("value_column", "column", required=True),
@@ -912,6 +1238,61 @@ NODE_SPECS: list[NodeSpec] = [
         ],
         default_params={"group_column": None, "value_column": None, "palette": "Set2", "title": "Ridge Plot"},
         default_code=NATURE_RIDGEPLOT_CODE,
+    ),
+
+    # ── Image Nodes ───────────────────────────────────────────────────────────
+    NodeSpec(
+        id="image_exporter", name="image_exporter", label="Image Exporter",
+        category="Image", color="#f57c00",
+        inputs={"img_in": {"type": "Image", "label": "image"}},
+        outputs={},
+        parameters=[
+            _ps("save_path", "string", required=True, default=""),
+            _ps("quality", "number", default=90),
+        ],
+        default_params={"save_path": "", "quality": 90},
+        default_code=IMAGE_EXPORTER_CODE,
+    ),
+    NodeSpec(
+        id="report_builder", name="report_builder", label="Report Builder",
+        category="Image", color="#7b1fa2",
+        inputs={"img_in": {"type": "Image", "label": "image 1"}},
+        outputs={"html_out": {"type": "HTML"}},
+        dynamic_inputs=True,
+        parameters=[
+            _ps("title", "string", default="Report"),
+            _ps("accent_color", "string", default="#1976d2"),
+            _ps("sections", "json", default=[]),
+        ],
+        default_params={
+            "title": "Report",
+            "accent_color": "#1976d2",
+            "sections": [
+                {"id": "s1", "columns": [{"id": "c1", "type": "heading", "content": "My Report", "fontSize": 18, "textAlign": "left", "showDivider": True}]},
+                {"id": "s2", "columns": [{"id": "c2", "type": "image", "imgPort": 1, "caption": ""}]},
+                {"id": "s3", "columns": [{"id": "c3", "type": "text", "content": "Add your analysis notes here.", "fontSize": 13, "textAlign": "left"}]},
+            ],
+        },
+        default_code=REPORT_BUILDER_CODE,
+        description="Visual page-layout report combining images and text. Use the Layout Editor in the node panel to arrange sections.",
+    ),
+    NodeSpec(
+        id="llm_vision", name="llm_vision", label="LLM Vision",
+        category="Image", color="#c62828",
+        inputs={"img_in": {"type": "Image", "label": "image"}},
+        outputs={"html_out": {"type": "HTML"}},
+        parameters=[
+            _ps("prompt", "string", default="Describe what you see in this image in detail."),
+            _ps("base_url", "string", default="https://generativelanguage.googleapis.com/v1beta/openai/"),
+            _ps("api_key", "string", default=""),
+            _ps("model", "string", default="gemini-2.5-flash"),
+        ],
+        default_params={
+            "prompt": "Describe what you see in this image in detail.",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "api_key": "", "model": "gemini-2.5-flash",
+        },
+        default_code=LLM_VISION_CODE,
     ),
 
     # ── Python Script ─────────────────────────────────────────────────────────
@@ -930,6 +1311,47 @@ NODE_SPECS: list[NodeSpec] = [
         parameters=[],
         default_params={},
         default_code=PYTHON_SCRIPT_HTML_CODE,
+    ),
+
+    # ── Group / Component boundary nodes ─────────────────────────────────────
+    NodeSpec(
+        id="port_in", name="port_in",
+        label="Port In", category="Group", color="#7b1fa2",
+        inputs={}, outputs={"df_out": {"type": "DataFrame"}},
+        parameters=[],
+        default_params={},
+        default_code="df_out = df_in",
+        description="Input boundary node for a Group or Component.",
+    ),
+    NodeSpec(
+        id="port_out", name="port_out",
+        label="Port Out", category="Group", color="#7b1fa2",
+        inputs={"df_in": {"type": "DataFrame"}}, outputs={},
+        parameters=[],
+        default_params={},
+        default_code="df_out = df_in",
+        description="Output boundary node for a Group or Component.",
+    ),
+    # KNIME-style vertical bar nodes (internal to group subflows, not user-draggable)
+    NodeSpec(
+        id="group_input_bar", name="group_input_bar",
+        label="Input", category="Group", color="#388e3c",
+        inputs={"df_in": {"type": "DataFrame"}},
+        outputs={"df_out": {"type": "DataFrame"}},
+        parameters=[],
+        default_params={},
+        default_code="",
+        description="Group input bar. Data is pre-injected by the group executor; execution is skipped.",
+    ),
+    NodeSpec(
+        id="group_output_bar", name="group_output_bar",
+        label="Output", category="Group", color="#c62828",
+        inputs={"df_in": {"type": "DataFrame"}},
+        outputs={"df_out": {"type": "DataFrame"}},
+        parameters=[],
+        default_params={},
+        default_code="",
+        description="Group output bar. Its upstream edge provides the group's output.",
     ),
 ]
 
@@ -1030,12 +1452,19 @@ _DESCRIPTIONS: dict[str, str] = {
         "Each layer gets its own color and a layer-control toggle."
     ),
     "geo_view": (
-        "**Static PNG map** of one or more layers — for large, publication-ready output.\n\n"
-        "**Dynamic inputs**: + / − to add or remove layer ports; layers draw "
-        "**bottom-to-top**.\n\n"
-        "- `color_column`: choropleth column (uses `cmap`)\n"
-        "- `dpi`: output resolution\n"
-        "- `save_path`: optional path to also **save the PNG to your workspace**"
+        "**Static map** (PNG or SVG) of one or more layers — publication-ready output.\n\n"
+        "**Dynamic inputs**: + / − to add or remove layer ports; layers draw **bottom-to-top**.\n\n"
+        "**Layer Styles** — per layer: column-driven coloring (Classified / Continuous), "
+        "color ramp, fill/boundary color & alpha, marker size for points.\n\n"
+        "**Legend bbox** (`x, y`) — axes-fraction coordinates that anchor the legend box:\n"
+        "- `(0, 0)` = bottom-left corner of the axes\n"
+        "- `(1, 1)` = top-right corner\n"
+        "- `(1.05, 0.5)` = just outside the right edge, vertically centred\n"
+        "- `(0.5, -0.15)` = below the axes, horizontally centred\n"
+        "Pair with **legend_loc** to control which corner of the legend box lands on that point. "
+        "e.g. loc=`upper left` + bbox=`1.05,1` places the legend's top-left corner outside the right edge.\n\n"
+        "**Output format**: PNG (default) or SVG (resolution-independent, no DPI needed).\n"
+        "**save_path**: full file path to also write the file to your workspace (e.g. `/data/map.png`)."
     ),
     "nature_boxplot": (
         "**Box plot** in Nature journal style (matplotlib + seaborn, static PNG).\n\n"

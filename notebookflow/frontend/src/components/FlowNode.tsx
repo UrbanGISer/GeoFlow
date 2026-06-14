@@ -62,6 +62,11 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
 
   const inputCount = data.showInput ? Math.max(1, data.inputCount ?? 1) : 0;
   const showOutput = data.showOutput ?? true;
+  const inHandleIds = (data.inputHandles as string[] | undefined) ??
+    Array.from({ length: inputCount }, (_, i) => inputHandleId(i + 1));
+  const outHandleIds: string[] = showOutput
+    ? (data.outputHandles as string[] | undefined) ?? [data.outputHandle as string]
+    : [];
 
   // Re-measure handle positions when the port layout changes so existing
   // edges re-anchor to the moved ports. Skipped on mount — calling
@@ -101,9 +106,8 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
     (selected ? "nf-flow-node-square--selected " : "") +
     statusRing;
 
-  const handles = Array.from({ length: inputCount }, (_, i) => i + 1);
   // Tall core when many ports so handles don't overlap.
-  const coreHeight = Math.max(40, inputCount * 16 + 8);
+  const coreHeight = Math.max(40, Math.max(inputCount, outHandleIds.length) * 16 + 8);
 
   const openPortEdit = data.dynamicInputs
     ? (e: { stopPropagation: () => void }) => {
@@ -113,20 +117,18 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
     : undefined;
 
   return (
-    <div className="nf-flow-node-root" ref={rootRef}>
+    <div className="nf-flow-node-root" ref={rootRef} style={{ height: coreHeight }}>
       <div className="nf-flow-node-caption nf-flow-node-caption-top">{data.label}</div>
-      <div className="nf-flow-node-core" style={{ height: coreHeight }}>
-        {handles.map((portIndex) => (
+      <div className="nf-flow-node-core">
+        {inHandleIds.map((hid, idx) => (
           <Handle
-            key={portIndex}
+            key={hid}
             type="target"
             position={Position.Left}
-            id={inputHandleId(portIndex)}
-            className="nf-flow-handle nf-handle-in"
-            // Left side divided into (n + 2) units; ports sit on the
-            // midpoints of the inner segments.
-            style={{ top: `${((portIndex + 0.5) / (inputCount + 2)) * 100}%` }}
-            title={inputHandleId(portIndex)}
+            id={hid}
+            className={`nf-flow-handle ${hid.startsWith("img_") ? "nf-handle-img-in" : "nf-handle-in"}`}
+            style={{ top: `${((idx + 1 + 0.5) / (inputCount + 2)) * 100}%` }}
+            title={hid}
             onClick={openPortEdit}
           />
         ))}
@@ -143,14 +145,19 @@ export function FlowNode({ id, data, selected }: NodeProps<Node<FlowNodeData>>) 
           className={squareClass.trim()}
           style={{ backgroundColor: data.color, height: "100%" }}
         />
-        {showOutput ? (
+        {outHandleIds.map((hid, idx) => (
           <Handle
+            key={hid}
             type="source"
             position={Position.Right}
-            id={data.outputHandle}
-            className="nf-flow-handle nf-handle-out"
+            id={hid}
+            className={`nf-flow-handle ${hid === "img_out" ? "nf-handle-img-out" : "nf-handle-out"}`}
+            style={outHandleIds.length > 1
+              ? { top: `${((idx + 1) / (outHandleIds.length + 1)) * 100}%` }
+              : undefined}
+            title={hid}
           />
-        ) : null}
+        ))}
         {data.dynamicInputs && portEdit ? (
           <div className="nf-port-popover nodrag">
             <button

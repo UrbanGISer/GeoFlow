@@ -14,6 +14,13 @@ interface OutputPreviewProps {
   variant?: "panel" | "embedded";
   /** Extra class on outer section (e.g. split-panel column) */
   sectionClassName?: string;
+  /** Label prefix for multi-port tabs (e.g. "Input" / "Output"). */
+  portTabPrefix?: string;
+}
+
+/** Convert a handle id (df_out, df_out_2, …) to a human-readable tab label. */
+function handleToTabLabel(_handle: string, index: number, prefix: string): string {
+  return `${prefix} ${index + 1}`;
 }
 
 function OutputPreviewInner({
@@ -25,8 +32,21 @@ function OutputPreviewInner({
   logs,
   variant = "panel",
   sectionClassName = "",
+  portTabPrefix = "Input",
 }: OutputPreviewProps) {
-  const df = output?.df_out;
+  const extraDfs = output?.extra_dfs;
+  const extraEntries = extraDfs ? Object.entries(extraDfs) : [];
+  const hasMultiPort = extraEntries.length > 1;
+
+  // Active tab for multi-port bar nodes (index into extraEntries)
+  const [activePortTab, setActivePortTab] = useState(0);
+  // Reset tab to 0 when node changes
+  useEffect(() => { setActivePortTab(0); }, [nodeId]);
+
+  // When multi-port, show the active tab's df; otherwise fall back to df_out
+  const df = hasMultiPort
+    ? (extraEntries[activePortTab]?.[1] ?? null)
+    : (extraEntries.length === 1 ? extraEntries[0][1] : output?.df_out);
   const previewRows = df?.preview ?? [];
   const html = output?.html_out;
   const [expanded, setExpanded] = useState<null | "table" | "html">(null);
@@ -55,6 +75,20 @@ function OutputPreviewInner({
         {title ? <h2 className="nf-panel-title">{title}</h2> : null}
         {nodeLabel ? <span className="nf-bottom-node-label" title={nodeLabel}>{nodeLabel}</span> : null}
       </div>
+      {hasMultiPort ? (
+        <div className="nf-port-tabs">
+          {extraEntries.map(([handle], i) => (
+            <button
+              key={handle}
+              type="button"
+              className={`nf-port-tab${i === activePortTab ? " nf-port-tab--active" : ""}`}
+              onClick={() => setActivePortTab(i)}
+            >
+              {handleToTabLabel(handle, i, portTabPrefix)}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="nf-bottom-body">
         {errorMessage ? (
           <div className="nf-error-banner">{errorMessage}</div>
@@ -241,6 +275,7 @@ function propsEqual(prev: OutputPreviewProps, next: OutputPreviewProps): boolean
     prev.errorMessage === next.errorMessage &&
     prev.variant === next.variant &&
     prev.sectionClassName === next.sectionClassName &&
+    prev.portTabPrefix === next.portTabPrefix &&
     prev.output === next.output &&
     prev.logs === next.logs
   );

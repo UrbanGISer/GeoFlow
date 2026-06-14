@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { pickFolderNative, workspaceSaveFile } from "../api/client";
+import { pickFolderNative, workspaceList, workspaceSaveFile } from "../api/client";
 import { loadWorkspaceRoot } from "../types";
 import { FolderPickerModal } from "./FolderPickerModal";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspacePanel";
@@ -8,22 +8,31 @@ interface SaveWorkflowModalProps {
   open: boolean;
   title?: string;
   defaultName?: string;
+  /** Default folder; falls back to the workspace folder when unset. */
+  defaultFolder?: string;
   /** Enforced file extension, e.g. ".json" / ".ipynb". */
   ext?: string;
+  /** When true, a name collision auto-increments: workflow.json → workflow1.json. */
+  dedupe?: boolean;
   /** Serialized content to write (may be async, e.g. backend conversion). */
   getContent: () => string | Promise<string>;
   onDownload: () => void | Promise<void>;
   onClose: () => void;
+  /** Called with the saved path after a successful save. */
+  onSaved?: (path: string) => void;
 }
 
 export function SaveWorkflowModal({
   open,
   title = "Save Workflow",
   defaultName = "workflow.json",
+  defaultFolder,
   ext = ".json",
+  dedupe = false,
   getContent,
   onDownload,
   onClose,
+  onSaved,
 }: SaveWorkflowModalProps) {
   const [folder, setFolder] = useState("");
   const [name, setName] = useState(defaultName);
@@ -33,11 +42,11 @@ export function SaveWorkflowModal({
 
   useEffect(() => {
     if (open) {
-      setFolder(loadWorkspaceRoot() ?? "");
+      setFolder(defaultFolder ?? loadWorkspaceRoot() ?? "");
       setName(defaultName);
       setMsg(null);
     }
-  }, [open, defaultName]);
+  }, [open, defaultName, defaultFolder]);
 
   if (!open) return null;
 
@@ -60,11 +69,27 @@ export function SaveWorkflowModal({
     setBusy(true);
     setMsg(null);
     try {
-      const finalName = fname.endsWith(ext) ? fname : `${fname}${ext}`;
+      let finalName = fname.endsWith(ext) ? fname : `${fname}${ext}`;
+      if (dedupe) {
+        // New workflow: avoid overwriting — workflow.json → workflow1.json, …
+        try {
+          const listing = await workspaceList(folder.trim() || null);
+          const names = new Set(listing.entries.map((e) => e.name));
+          if (names.has(finalName)) {
+            const base = finalName.slice(0, -ext.length);
+            let i = 1;
+            while (names.has(`${base}${i}${ext}`)) i += 1;
+            finalName = `${base}${i}${ext}`;
+          }
+        } catch {
+          // listing failed — save with the requested name
+        }
+      }
       const content = await getContent();
       const res = await workspaceSaveFile(folder.trim() || null, finalName, content);
       setMsg({ text: `Saved to ${res.path}`, error: false });
       window.dispatchEvent(new CustomEvent(WORKSPACE_REFRESH_EVENT));
+      onSaved?.(res.path);
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), error: true });
     } finally {

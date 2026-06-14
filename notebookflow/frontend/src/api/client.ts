@@ -91,6 +91,8 @@ export async function runSingleNode(payload: {
   nodes: WorkflowNodePayload[];
   edges: WorkflowEdgePayload[];
   node_id: string;
+  use_cache?: boolean;
+  no_clear?: boolean;
 }): Promise<RunWorkflowResponse> {
   const res = await fetch(`${API_PREFIX}/node/run`, {
     method: "POST",
@@ -100,6 +102,25 @@ export async function runSingleNode(payload: {
   const data = await parseJson<RunWorkflowResponse>(res);
   if (!res.ok && data.status !== "error") {
     throw new Error(`Node run failed: ${res.status}`);
+  }
+  return data;
+}
+
+export async function runNodeInGroup(payload: {
+  nodes: WorkflowNodePayload[];
+  edges: WorkflowEdgePayload[];
+  group_path: string[];
+  node_id: string;
+  use_cache?: boolean;
+}): Promise<RunWorkflowResponse> {
+  const res = await fetch(`${API_PREFIX}/node/run-in-group`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJson<RunWorkflowResponse>(res);
+  if (!res.ok && data.status !== "error") {
+    throw new Error(`Group node run failed: ${res.status}`);
   }
   return data;
 }
@@ -291,6 +312,33 @@ export async function workspaceSaveFile(
 export async function workspaceRead(path: string): Promise<{ path: string; content: string }> {
   const res = await fetch(`${API_PREFIX}/workspace/read?path=${encodeURIComponent(path)}`);
   return parseJsonWithHttpError<{ path: string; content: string }>(res, "Read file");
+}
+
+export async function workspaceRename(path: string, newName: string): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, new_name: newName }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Rename");
+}
+
+export async function workspaceReveal(path: string): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/reveal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Reveal in Finder");
+}
+
+export async function workspaceCopy(path: string): Promise<{ path: string }> {
+  const res = await fetch(`${API_PREFIX}/workspace/copy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  return parseJsonWithHttpError<{ path: string }>(res, "Copy");
 }
 
 /** Open the native OS folder dialog (backend runs locally). Throws when no GUI. */

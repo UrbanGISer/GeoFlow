@@ -28,6 +28,7 @@ from app.models import (
     NotebookCell,
     NotebookStandardizeRequest,
     NotebookStandardizeResponse,
+    GroupNodeRunRequest,
     RunWorkflowRequest,
     RunWorkflowResponse,
     SingleNodeRunRequest,
@@ -45,7 +46,7 @@ from app.services.notebook_standardizer import standardize_notebook
 from app.services.planner import plan_workflow
 from app.services.workflow_composer import compose_workflow
 from app.services.workflow_validator import validate_workflow
-from app.workflow_engine import run_single_node, run_workflow
+from app.workflow_engine import run_node_in_group, run_single_node, run_workflow
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TMP_UPLOADS = BASE_DIR / "tmp" / "uploads"
@@ -185,6 +186,30 @@ def run_node_endpoint(payload: SingleNodeRunRequest) -> RunWorkflowResponse:
     status, node_outputs, logs, err_id, msg = run_single_node(
         payload.nodes,
         payload.edges,
+        payload.node_id,
+        _store,
+        TMP_ARTIFACTS,
+        cache=_result_cache,
+        use_cache=payload.use_cache,
+        no_clear=payload.no_clear,
+    )
+    if status == "error":
+        return RunWorkflowResponse(
+            status="error",
+            node_id=err_id,
+            message=msg or "Unknown error",
+            node_outputs=node_outputs,
+            logs=logs,
+        )
+    return RunWorkflowResponse(status="success", node_outputs=node_outputs, logs=logs)
+
+
+@app.post("/api/node/run-in-group", response_model=RunWorkflowResponse)
+def run_node_in_group_endpoint(payload: GroupNodeRunRequest) -> RunWorkflowResponse:
+    status, node_outputs, logs, err_id, msg = run_node_in_group(
+        payload.nodes,
+        payload.edges,
+        payload.group_path,
         payload.node_id,
         _store,
         TMP_ARTIFACTS,
@@ -366,3 +391,17 @@ def export_ipynb_endpoint(payload: CWLExportRequest) -> dict:
 @app.post("/api/workspace/delete")
 def workspace_delete(payload: dict) -> dict:
     return _ws_call(ws.delete_path, payload.get("path", ""))
+
+
+@app.post("/api/workspace/rename")
+def workspace_rename(payload: dict) -> dict:
+    return _ws_call(ws.rename_path, payload.get("path", ""), payload.get("new_name", ""))
+
+
+@app.post("/api/workspace/copy")
+def workspace_copy(payload: dict) -> dict:
+    return _ws_call(ws.copy_path, payload.get("path", ""))
+
+@app.post("/api/workspace/reveal")
+def workspace_reveal(payload: dict) -> dict:
+    return _ws_call(ws.reveal_path, payload.get("path", ""))

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   pickFolderNative,
   workspaceCreateFile,
+  workspaceCopy,
   workspaceDelete,
   workspaceList,
   workspaceMkdir,
+  workspaceRead,
+  workspaceRename,
+  workspaceReveal,
   type WorkspaceListing,
 } from "../api/client";
 import { loadWorkspaceRoot, saveWorkspaceRoot } from "../types";
@@ -33,8 +37,16 @@ function fileIcon(name: string, isDir: boolean): string {
   return FILE_ICONS[ext] ?? "·";
 }
 
+interface CtxMenu {
+  x: number;
+  y: number;
+  path: string;
+  name: string;
+  isDir: boolean;
+}
+
 interface WorkspacePanelProps {
-  /** Called when the user clicks a file (App opens .json files as workflows). */
+  /** Called when the user double-clicks a .json workflow file. */
   onOpenFile?: (path: string) => void;
 }
 
@@ -44,6 +56,8 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   const [busy, setBusy] = useState(false);
   const [pathInput, setPathInput] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (path?: string | null) => {
     setBusy(true);
@@ -52,8 +66,6 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
       const res = await workspaceList(path);
       setListing(res);
       setPathInput(res.path);
-      // The folder you browse to IS the workspace root (default for
-      // future sessions and for Save Workflow).
       saveWorkspaceRoot(res.path);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -63,8 +75,6 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
   }, []);
 
   useEffect(() => {
-    // Resume the last-used folder; fall back to the backend default if
-    // it no longer exists.
     (async () => {
       const stored = loadWorkspaceRoot();
       if (stored) {
@@ -81,7 +91,6 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
     })();
   }, [load]);
 
-  // External refresh (e.g. after Save Workflow writes a file here).
   useEffect(() => {
     const onRefresh = () => {
       setListing((cur) => {
@@ -92,6 +101,18 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
     window.addEventListener(WORKSPACE_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, onRefresh);
   }, [load]);
+
+  // Dismiss context menu on outside click
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [ctxMenu]);
 
   const handleNewFolder = async () => {
     if (!listing) return;
@@ -123,6 +144,39 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
     try {
       await workspaceDelete(path);
       await load(listing?.path);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleRename = async (path: string, currentName: string) => {
+    const newName = prompt("Rename to:", currentName);
+    if (!newName?.trim() || newName.trim() === currentName) return;
+    try {
+      await workspaceRename(path, newName.trim());
+      await load(listing?.path);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleCopy = async (path: string) => {
+    try {
+      await workspaceCopy(path);
+      await load(listing?.path);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleOpenAsWorkflow = async (path: string) => {
+    try {
+      const res = await workspaceRead(path);
+      const wf = JSON.parse(res.content);
+      if (!Array.isArray(wf.nodes) || !Array.isArray(wf.edges)) {
+        throw new Error("Not a GeoFlow workflow JSON (missing nodes/edges).");
+      }
+      onOpenFile?.(path);
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -161,14 +215,14 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
           + File
         </button>
         <button type="button" className="nf-btn nf-btn-sm" disabled={busy}
-          title="Browse for a folder — it becomes the workspace root"
+          title="Browse for a folder"
           onClick={() => {
             void (async () => {
               try {
                 const res = await pickFolderNative(listing?.path ?? null);
                 if (res.path) void load(res.path);
               } catch {
-                setPickerOpen(true); // no GUI on backend host → in-app browser
+                setPickerOpen(true);
               }
             })();
           }}>
@@ -181,14 +235,25 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
           <p className="nf-muted" style={{ padding: "10px 12px", fontSize: 12 }}>Empty folder.</p>
         ) : null}
         {listing?.entries.map((entry) => (
-          <div key={entry.path} className="nf-workspace-row">
+          <div
+            key={entry.path}
+            className="nf-workspace-row"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu({ x: e.clientX, y: e.clientY, path: entry.path, name: entry.name, isDir: entry.is_dir });
+            }}
+          >
             <button
               type="button"
               className="nf-workspace-name"
-              title={entry.is_dir ? entry.path : `${entry.path}${entry.name.endsWith(".json") ? " — click to open as workflow" : ""}`}
+              title={entry.is_dir ? entry.path : `${entry.path}${entry.name.endsWith(".json") ? " — double-click to open as workflow" : ""}`}
               onClick={() => {
                 if (entry.is_dir) load(entry.path);
-                else onOpenFile?.(entry.path);
+              }}
+              onDoubleClick={() => {
+                if (!entry.is_dir && entry.name.endsWith(".json")) {
+                  void handleOpenAsWorkflow(entry.path);
+                }
               }}
               style={{ cursor: entry.is_dir || entry.name.endsWith(".json") ? "pointer" : "default" }}
             >
@@ -198,17 +263,57 @@ export function WorkspacePanel({ onOpenFile }: WorkspacePanelProps) {
             <span className="nf-workspace-size">
               {entry.is_dir ? "" : fmtSize(entry.size)}
             </span>
-            <button
-              type="button"
-              className="nf-workspace-del"
-              title={`Delete ${entry.name}`}
-              onClick={() => handleDelete(entry.path, entry.name, entry.is_dir)}
-            >
-              ✕
-            </button>
           </div>
         ))}
       </div>
+
+      {/* Right-click context menu */}
+      {ctxMenu ? (
+        <div
+          ref={ctxRef}
+          className="nf-ctx-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {!ctxMenu.isDir && ctxMenu.name.endsWith(".json") ? (
+            <button type="button" className="nf-ctx-item" onClick={() => {
+              void handleOpenAsWorkflow(ctxMenu.path);
+              setCtxMenu(null);
+            }}>
+              Open as Workflow
+            </button>
+          ) : null}
+          <button type="button" className="nf-ctx-item" onClick={() => {
+            void workspaceReveal(ctxMenu.path).catch((e) =>
+              alert(e instanceof Error ? e.message : String(e))
+            );
+            setCtxMenu(null);
+          }}>
+            {ctxMenu.isDir ? "Open in Finder" : "Reveal in Finder"}
+          </button>
+          <div className="nf-ctx-separator" />
+          <button type="button" className="nf-ctx-item" onClick={() => {
+            void handleRename(ctxMenu.path, ctxMenu.name);
+            setCtxMenu(null);
+          }}>
+            Rename…
+          </button>
+          {!ctxMenu.isDir ? (
+            <button type="button" className="nf-ctx-item" onClick={() => {
+              void handleCopy(ctxMenu.path);
+              setCtxMenu(null);
+            }}>
+              Duplicate
+            </button>
+          ) : null}
+          <button type="button" className="nf-ctx-item nf-ctx-item-danger" onClick={() => {
+            void handleDelete(ctxMenu.path, ctxMenu.name, ctxMenu.isDir);
+            setCtxMenu(null);
+          }}>
+            Delete
+          </button>
+        </div>
+      ) : null}
+
       <FolderPickerModal
         open={pickerOpen}
         initialPath={listing?.path ?? null}

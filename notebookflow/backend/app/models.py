@@ -30,6 +30,8 @@ class WorkflowNode(BaseModel):
     code: str = ""
     input_count: int | None = None  # UI port count for dynamic-input nodes
     annotation: str = ""  # KNIME-style note under the node (UI only, not fingerprinted)
+    group_type: str | None = None  # "group" or "component" for group nodes
+    subflow: dict[str, Any] | None = None  # {nodes, edges} for group/component nodes
 
 
 class WorkflowPayload(BaseModel):
@@ -53,6 +55,16 @@ class SingleNodeRunRequest(BaseModel):
     nodes: list[WorkflowNode]
     edges: list[WorkflowEdge]
     node_id: str
+    use_cache: bool = True
+    no_clear: bool = False  # skip store.clear() to reuse cached bar/upstream data
+
+
+class GroupNodeRunRequest(BaseModel):
+    """Run a single node inside a (possibly nested) group subflow."""
+    nodes: list[WorkflowNode]
+    edges: list[WorkflowEdge]
+    group_path: list[str]  # chain of group node IDs from root → containing subflow
+    node_id: str           # inner target node id
     use_cache: bool = True
 
 

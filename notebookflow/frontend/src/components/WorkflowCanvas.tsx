@@ -7,6 +7,7 @@ import {
   Node,
   NodeTypes,
   OnConnect,
+  OnConnectStart,
   OnEdgesChange,
   OnNodesChange,
   OnNodesDelete,
@@ -14,16 +15,30 @@ import {
   ReactFlowProvider,
   SelectionMode,
   useReactFlow,
+  type OnConnectEnd,
 } from "@xyflow/react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import "@xyflow/react/dist/style.css";
 import type { FlowNodeData } from "../types";
 import { AnnotationNode } from "./AnnotationNode";
+import { GroupBarNode } from "./GroupBarNode";
 import { FlowNode } from "./FlowNode";
+import { GroupNode } from "./GroupNode";
 import { DRAG_TYPE } from "./NodeLibrary";
 import { PortActionsContext, type PortActions } from "./portActions";
+import { groupBridge } from "../groupBridge";
 
-const nodeTypes: NodeTypes = { notebook: FlowNode, annotation: AnnotationNode };
+const nodeTypes: NodeTypes = {
+  notebook: FlowNode,
+  annotation: AnnotationNode,
+  flowGroup: GroupNode,
+  group_input_bar: GroupBarNode,
+  group_output_bar: GroupBarNode,
+};
+
+// Cap fit-to-view zoom so small workflows don't open at the 2× max. ~3 zoom-out
+// clicks (factor 1.2 each) below the default max: 2 / 1.2³ ≈ 1.15.
+const FIT_VIEW_OPTIONS = { maxZoom: 1.15, minZoom: 0.2 } as const;
 
 interface WorkflowCanvasInnerProps {
   nodes: Node<FlowNodeData>[];
@@ -37,10 +52,26 @@ interface WorkflowCanvasInnerProps {
   onDropSpec?: (specId: string, position: { x: number; y: number }) => void;
   onAddInput?: (nodeId: string) => void;
   onRemoveInput?: (nodeId: string) => void;
+  onAddGroupInput?: (nodeId: string) => void;
+  onRemoveGroupInput?: (nodeId: string) => void;
+  onAddGroupOutput?: (nodeId: string) => void;
+  onRemoveGroupOutput?: (nodeId: string) => void;
   onUpdateNodeData?: (nodeId: string, patch: Record<string, unknown>) => void;
   onNodeMenu?: (pos: { x: number; y: number }, node: Node<FlowNodeData>) => void;
+  onSelectionMenu?: (pos: { x: number; y: number }, nodes: Node<FlowNodeData>[]) => void;
   onEdgeMenu?: (pos: { x: number; y: number }, edge: Edge) => void;
   onPaneMenu?: (pos: { x: number; y: number }, flowPos: { x: number; y: number }) => void;
+  onConnectStart?: (nodeId: string, handleId: string | null) => void;
+  /** Called when a drag-connection is released. When dropped on empty space,
+   *  isValid is false/null — the caller can show an "add node" picker. */
+  onConnectEnd?: (info: {
+    x: number;
+    y: number;
+    flowPos: { x: number; y: number };
+    fromNodeId: string;
+    fromHandleId: string | null;
+    isValid: boolean | null;
+  }) => void;
 }
 
 function WorkflowCanvasInner({
@@ -55,21 +86,45 @@ function WorkflowCanvasInner({
   onDropSpec,
   onAddInput,
   onRemoveInput,
+  onAddGroupInput,
+  onRemoveGroupInput,
+  onAddGroupOutput,
+  onRemoveGroupOutput,
   onUpdateNodeData,
   onNodeMenu,
+  onSelectionMenu,
   onEdgeMenu,
   onPaneMenu,
+  onConnectStart,
+  onConnectEnd,
 }: WorkflowCanvasInnerProps) {
   const empty = nodes.length === 0;
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getViewport, setViewport, fitView } = useReactFlow();
+
+  // Let App save/restore the viewport per level so entering/exiting a subflow
+  // returns to exactly where the user left off.
+  useEffect(() => {
+    groupBridge.getViewport = () => getViewport();
+    groupBridge.setViewport = (vp) => setViewport(vp);
+    groupBridge.fitView = () => fitView(FIT_VIEW_OPTIONS);
+    return () => {
+      groupBridge.getViewport = () => ({ x: 0, y: 0, zoom: 1 });
+      groupBridge.setViewport = () => {};
+      groupBridge.fitView = () => {};
+    };
+  }, [getViewport, setViewport, fitView]);
 
   const portActions = useMemo<PortActions>(
     () => ({
       addInput: (nodeId) => onAddInput?.(nodeId),
       removeInput: (nodeId) => onRemoveInput?.(nodeId),
+      addGroupInput: (nodeId) => onAddGroupInput?.(nodeId),
+      removeGroupInput: (nodeId) => onRemoveGroupInput?.(nodeId),
+      addGroupOutput: (nodeId) => onAddGroupOutput?.(nodeId),
+      removeGroupOutput: (nodeId) => onRemoveGroupOutput?.(nodeId),
       updateNodeData: (nodeId, patch) => onUpdateNodeData?.(nodeId, patch),
     }),
-    [onAddInput, onRemoveInput, onUpdateNodeData],
+    [onAddInput, onRemoveInput, onAddGroupInput, onRemoveGroupInput, onAddGroupOutput, onRemoveGroupOutput, onUpdateNodeData],
   );
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -106,6 +161,23 @@ function WorkflowCanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={onConnectStart as OnConnectStart | undefined}
+          onConnectEnd={((event, connectionState) => {
+            if (!onConnectEnd) return;
+            const e = event as MouseEvent | TouchEvent;
+            const clientX = "touches" in e ? e.changedTouches[0].clientX : (e as MouseEvent).clientX;
+            const clientY = "touches" in e ? e.changedTouches[0].clientY : (e as MouseEvent).clientY;
+            const fromNode = (connectionState as { fromNode?: { id: string } }).fromNode;
+            const fromHandle = (connectionState as { fromHandle?: { id: string } }).fromHandle;
+            onConnectEnd({
+              x: clientX,
+              y: clientY,
+              flowPos: screenToFlowPosition({ x: clientX, y: clientY }),
+              fromNodeId: fromNode?.id ?? "",
+              fromHandleId: fromHandle?.id ?? null,
+              isValid: (connectionState as { isValid?: boolean | null }).isValid ?? null,
+            });
+          }) as OnConnectEnd}
           onNodesDelete={onNodesDelete}
           nodeTypes={nodeTypes}
           onNodeDoubleClick={onNodeDoubleClick}
@@ -113,6 +185,10 @@ function WorkflowCanvasInner({
           onNodeContextMenu={(e, node) => {
             e.preventDefault();
             onNodeMenu?.({ x: e.clientX, y: e.clientY }, node);
+          }}
+          onSelectionContextMenu={(e, selNodes) => {
+            e.preventDefault();
+            onSelectionMenu?.({ x: e.clientX, y: e.clientY }, selNodes as Node<FlowNodeData>[]);
           }}
           onEdgeContextMenu={(e, edge) => {
             e.preventDefault();
@@ -132,6 +208,8 @@ function WorkflowCanvasInner({
           panOnDrag={[1]}
           panOnScroll
           fitView
+          fitViewOptions={FIT_VIEW_OPTIONS}
+          minZoom={0.2}
           defaultEdgeOptions={{ style: { stroke: "#222", strokeWidth: 1.5 } }}
           proOptions={{ hideAttribution: true }}
         >

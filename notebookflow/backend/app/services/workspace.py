@@ -222,6 +222,71 @@ def pick_folder_native(initial: str | None = None) -> dict[str, str]:
         raise RuntimeError(f"Native folder dialog unavailable: {exc}") from exc
 
 
+def rename_path(path: str, new_name: str) -> dict[str, str]:
+    """Rename a file or folder within its current directory."""
+    if not path:
+        raise ValueError("Path is required.")
+    if not new_name or not new_name.strip():
+        raise ValueError("New name is required.")
+    new_name = Path(new_name).name  # strip any path separators
+    target = _resolve(path)
+    if not target.exists():
+        raise FileNotFoundError(f"Not found: {target}")
+    dest = target.parent / new_name
+    if dest.exists():
+        raise FileExistsError(f"Already exists: {dest}")
+    target.rename(dest)
+    return {"path": str(dest)}
+
+
+def copy_path(path: str) -> dict[str, str]:
+    """Copy a file or folder, appending '_copy' to the name."""
+    if not path:
+        raise ValueError("Path is required.")
+    target = _resolve(path)
+    if not target.exists():
+        raise FileNotFoundError(f"Not found: {target}")
+    stem = target.stem if target.is_file() else target.name
+    suffix = target.suffix if target.is_file() else ""
+    dest = target.parent / f"{stem}_copy{suffix}"
+    # Ensure unique name
+    counter = 2
+    while dest.exists():
+        dest = target.parent / f"{stem}_copy{counter}{suffix}"
+        counter += 1
+    if target.is_dir():
+        shutil.copytree(target, dest)
+    else:
+        shutil.copy2(target, dest)
+    return {"path": str(dest)}
+
+
+def reveal_path(path: str) -> dict[str, str]:
+    """Open a file or folder in the system file manager (Finder/Explorer)."""
+    import subprocess, sys
+    target = Path(path).resolve()
+    if not target.exists():
+        raise FileNotFoundError(f"Not found: {target}")
+    try:
+        if sys.platform == "darwin":
+            if target.is_file():
+                subprocess.Popen(["open", "-R", str(target)])
+            else:
+                subprocess.Popen(["open", str(target)])
+        elif sys.platform == "win32":
+            if target.is_file():
+                subprocess.Popen(["explorer", f"/select,{target}"])
+            else:
+                subprocess.Popen(["explorer", str(target)])
+        else:
+            # Linux: open parent directory
+            folder = target.parent if target.is_file() else target
+            subprocess.Popen(["xdg-open", str(folder)])
+    except Exception as exc:
+        raise RuntimeError(f"Could not open file manager: {exc}") from exc
+    return {"path": str(target)}
+
+
 def delete_path(path: str) -> dict[str, str]:
     if not path:
         raise ValueError("Path is required.")

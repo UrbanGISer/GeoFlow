@@ -12,9 +12,8 @@ const TABS: Array<{ id: LeftTab; icon: string; label: string; iconClass?: string
   { id: "nodes", icon: "▦", label: "Nodes" },
   { id: "info", icon: "ⓘ", label: "Info" },
   { id: "workspace", icon: "📁", label: "Workspace" },
-  { id: "ai", icon: "✦", label: "AI Settings" },
-  // The ≣ glyph renders small — give it 1.5× the base size.
-  { id: "logs", icon: "≣", label: "Logs", iconClass: "nf-rail-icon-lg" },
+  { id: "ai", icon: "✦", label: "AI Settings", iconClass: "nf-rail-icon-lg" },
+  { id: "logs", icon: "☰", label: "Logs", iconClass: "nf-rail-icon-lg" },
 ];
 
 /** KNIME-style vertical icon rail — always visible; clicking an icon

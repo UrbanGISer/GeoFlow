@@ -104,7 +104,7 @@ def export_ipynb(nodes: list[WorkflowNode], edges: list[WorkflowEdge]) -> dict[s
             lines.append("params = {}")
 
         sources = _upstream_sources(nid, edges)
-        port_map = {idx: src for idx, src in sources}
+        port_map = {idx: src for idx, src, _handle in sources}
         max_port = max(port_map, default=0)
         if max_port == 0:
             lines.append("df_in = None")

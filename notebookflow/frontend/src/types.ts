@@ -25,6 +25,28 @@ export interface NodeSpec {
   provenance?: Record<string, unknown> | null;
 }
 
+export interface SubflowPortMapping {
+  /** Handle on the group node (e.g. "df_in", "df_in_2", "df_out") */
+  groupHandle: string;
+  /** ID of the subflow node (bar node or inner node) */
+  nodeId: string;
+  /** Handle on that node */
+  nodeHandle: string;
+}
+
+export interface SubflowData {
+  nodes: WorkflowNodePayload[];
+  edges: WorkflowEdgePayload[];
+  /** group_input_bar node+handle that receives each group-level input (backend execution) */
+  input_map?: SubflowPortMapping[];
+  /** group_output_bar node+handle that provides each group-level output (backend execution) */
+  output_map?: SubflowPortMapping[];
+  /** Direct mapping to original inner node+handle, used for Expand */
+  direct_input_map?: SubflowPortMapping[];
+  /** Direct mapping from original inner node+handle, used for Expand */
+  direct_output_map?: SubflowPortMapping[];
+}
+
 export interface WorkflowNodePayload {
   id: string;
   type: string;
@@ -35,6 +57,8 @@ export interface WorkflowNodePayload {
   code: string;
   input_count?: number;
   annotation?: string;
+  group_type?: "group" | "component";
+  subflow?: SubflowData;
 }
 
 /** Free-floating canvas text box (saved alongside the workflow, never executed). */
@@ -71,9 +95,17 @@ export interface HtmlOutputSummary {
   artifact_url: string;
 }
 
+export interface ImageOutputSummary {
+  type: "Image";
+  artifact_url: string;
+}
+
 export interface NodeOutputsEntry {
   df_out?: DataFrameOutputSummary;
   html_out?: HtmlOutputSummary;
+  img_out?: ImageOutputSummary;
+  /** Multi-handle outputs for bar nodes: keyed by handle name (df_out, df_out_2, …) */
+  extra_dfs?: Record<string, DataFrameOutputSummary>;
 }
 
 export type NodeOutputsMap = Record<string, NodeOutputsEntry>;
@@ -214,7 +246,11 @@ export interface FlowNodeData {
   status: NodeStatus;
   color: string;
   showInput: boolean;
-  outputHandle: "df_out" | "html_out";
+  outputHandle: "df_out" | "html_out" | "img_out";
+  /** All connectable output handles (df_out, img_out). html_out is view-only — not included. */
+  outputHandles?: string[];
+  /** Explicit input handle ids (e.g. ["img_in"] for image nodes). Defaults to inputHandleId(n). */
+  inputHandles?: string[];
   /** False for view-only nodes (html_out only) — no downstream data to connect */
   showOutput?: boolean;
   /** Number of input ports (1 = just df_in, 2 = df_in + df_in_2, …) */
@@ -223,6 +259,10 @@ export interface FlowNodeData {
   dynamicInputs?: boolean;
   /** KNIME-style editable note shown under the node icon */
   annotation?: string;
+  /** "group" or "component" for group/component nodes */
+  groupType?: "group" | "component";
+  /** Subflow data for group/component nodes */
+  subflow?: SubflowData;
 }
 
 /** Port handle id for the n-th input (1-based): df_in, df_in_2, df_in_3, … */

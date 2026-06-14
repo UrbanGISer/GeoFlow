@@ -25,6 +25,7 @@ export function NodeLibrary({ specs, onAdd, selectedSpecId, onSelectSpec }: Node
     const map = new Map<string, NodeSpec[]>();
     for (const spec of specs) {
       const cat = spec.category || "Other";
+      if (cat === "Group") continue; // internal bar nodes, not user-draggable
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(spec);
     }
@@ -38,7 +39,7 @@ export function NodeLibrary({ specs, onAdd, selectedSpecId, onSelectSpec }: Node
     });
   }, [specs]);
 
-  const [openCats, setOpenCats] = useState<Set<string>>(() => new Set(["Input", "Transform", "GIS", "Visualization"]));
+  const [openCats, setOpenCats] = useState<Set<string>>(() => new Set());
 
   const [search, setSearch] = useState("");
 

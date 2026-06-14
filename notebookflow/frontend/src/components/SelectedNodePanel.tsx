@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import { generateCode, uploadCsv } from "../api/client";
 import type { FlowNodeData, NodeOutputsMap, NodeSpec } from "../types";
-import { loadAIConfig } from "../types";
+import { inputHandleId, loadAIConfig } from "../types";
+import type { GeoLayerInfo } from "./GeoLayerStylesEditor";
+import { GeoLayerStylesEditor } from "./GeoLayerStylesEditor";
+import { GeoViewParamsEditor } from "./GeoViewParamsEditor";
+import { ReportBuilderEditor } from "./ReportBuilderEditor";
 import { CodeEditor } from "./CodeEditor";
 import { ParameterEditor } from "./ParameterEditor";
 
@@ -16,6 +20,138 @@ function upstreamColumns(
   );
   if (!incoming) return [];
   return outputs[incoming.source]?.df_out?.columns ?? [];
+}
+
+function upstreamColumnsRight(
+  edges: Edge[],
+  nodeId: string,
+  outputs: NodeOutputsMap,
+): string[] {
+  const incoming = edges.find(
+    (e) => e.target === nodeId && e.targetHandle === "df_in_2",
+  );
+  if (!incoming) return [];
+  return outputs[incoming.source]?.df_out?.columns ?? [];
+}
+
+function JoinTablesEditor({
+  params,
+  leftColumns,
+  rightColumns,
+  onChange,
+}: {
+  params: Record<string, unknown>;
+  leftColumns: string[];
+  rightColumns: string[];
+  onChange: (p: Record<string, unknown>) => void;
+}) {
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+
+  const leftOn = params.left_on as string | null ?? null;
+  const rightOn = params.right_on as string | null ?? null;
+  const how = (params.how as string) ?? "inner";
+
+  // Column selections — null/empty means "all"
+  const leftCols = params.left_columns as string[] | null ?? null;
+  const rightCols = params.right_columns as string[] | null ?? null;
+  const allLeftSelected = !leftCols || leftCols.length === 0;
+  const allRightSelected = !rightCols || rightCols.length === 0;
+
+  const toggleLeftCol = (col: string, checked: boolean) => {
+    const base = allLeftSelected ? leftColumns : (leftCols ?? []);
+    const next = checked ? [...base, col] : base.filter((c) => c !== col);
+    onChange({ ...params, left_columns: next.length === leftColumns.length ? null : next });
+  };
+  const toggleRightCol = (col: string, checked: boolean) => {
+    const base = allRightSelected ? rightColumns : (rightCols ?? []);
+    const next = checked ? [...base, col] : base.filter((c) => c !== col);
+    onChange({ ...params, right_columns: next.length === rightColumns.length ? null : next });
+  };
+
+  return (
+    <div className="nf-join-editor">
+      {/* Left key */}
+      <label className="nf-field">
+        <span className="nf-field-label">Left key column *</span>
+        <select value={leftOn ?? ""} onChange={(e) => onChange({ ...params, left_on: e.target.value || null })}>
+          <option value="">— connect left table first —</option>
+          {leftColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
+
+      {/* Right key — always a dropdown from df_in_2 columns */}
+      <label className="nf-field">
+        <span className="nf-field-label">Right key column *</span>
+        <select value={rightOn ?? ""} onChange={(e) => onChange({ ...params, right_on: e.target.value || null })}>
+          <option value="">— connect right table first —</option>
+          {rightColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
+
+      {/* Join type */}
+      <label className="nf-field">
+        <span className="nf-field-label">Join type</span>
+        <select value={how} onChange={(e) => onChange({ ...params, how: e.target.value })}>
+          {["inner", "left", "right", "outer"].map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+      </label>
+
+      {/* Left columns (collapsible) */}
+      {leftColumns.length > 0 && (
+        <div className="nf-collapsible">
+          <button type="button" className="nf-collapsible-header" onClick={() => setLeftOpen((v) => !v)}>
+            <span>Left output columns {allLeftSelected ? "(all)" : `(${(leftCols ?? []).length})`}</span>
+            <span className="nf-collapsible-arrow">{leftOpen ? "▾" : "▸"}</span>
+          </button>
+          {leftOpen && (
+            <div className="nf-collapsible-body nf-multi">
+              <label className="nf-field-row">
+                <input type="checkbox" checked={allLeftSelected}
+                  onChange={(e) => onChange({ ...params, left_columns: e.target.checked ? null : [] })} />
+                <span>(Select all)</span>
+              </label>
+              {leftColumns.map((c) => (
+                <label key={c} className="nf-field-row">
+                  <input type="checkbox"
+                    checked={allLeftSelected || (leftCols ?? []).includes(c)}
+                    onChange={(e) => toggleLeftCol(c, e.target.checked)} />
+                  <span>{c}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Right columns (collapsible) */}
+      {rightColumns.length > 0 && (
+        <div className="nf-collapsible">
+          <button type="button" className="nf-collapsible-header" onClick={() => setRightOpen((v) => !v)}>
+            <span>Right output columns {allRightSelected ? "(all)" : `(${(rightCols ?? []).length})`}</span>
+            <span className="nf-collapsible-arrow">{rightOpen ? "▾" : "▸"}</span>
+          </button>
+          {rightOpen && (
+            <div className="nf-collapsible-body nf-multi">
+              <label className="nf-field-row">
+                <input type="checkbox" checked={allRightSelected}
+                  onChange={(e) => onChange({ ...params, right_columns: e.target.checked ? null : [] })} />
+                <span>(Select all)</span>
+              </label>
+              {rightColumns.map((c) => (
+                <label key={c} className="nf-field-row">
+                  <input type="checkbox"
+                    checked={allRightSelected || (rightCols ?? []).includes(c)}
+                    onChange={(e) => toggleRightCol(c, e.target.checked)} />
+                  <span>{c}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Node types that get the in-panel AI Coding helper. */
@@ -170,9 +306,33 @@ export function SelectedNodePanel({
     [edges, node, nodeOutputs],
   );
 
+  const colsRight = useMemo(
+    () => (node ? upstreamColumnsRight(edges, node.id, nodeOutputs) : []),
+    [node, edges, nodeOutputs],
+  );
+
+  // Per-input-port columns/dtypes for nodes with a geo_layers parameter (GeoView).
+  const geoLayerInfo = useMemo<GeoLayerInfo | undefined>(() => {
+    if (!node || !spec?.parameters.some((p) => p.type === "geo_layers")) return undefined;
+    const count = node.data.inputCount ?? 1;
+    const columns: string[][] = [];
+    const dtypes: Record<string, string>[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const handle = inputHandleId(i + 1);
+      const incoming = edges.find(
+        (e) => e.target === node.id && (e.targetHandle === handle || (i === 0 && !e.targetHandle)),
+      );
+      const df = incoming ? nodeOutputs[incoming.source]?.df_out : undefined;
+      columns.push(df?.columns ?? []);
+      dtypes.push(df?.dtypes ?? {});
+    }
+    return { count, columns, dtypes };
+  }, [node, spec, edges, nodeOutputs]);
+
   const paramsList = spec?.parameters ?? [];
   const aiCoding = node ? AI_CODING_TYPES.has(node.data.type) : false;
   const aiMode: "data" | "html" = node?.data.type === "python_script_html" ? "html" : "data";
+  const isGroupNode = node?.data.groupType === "group" || node?.data.groupType === "component";
 
   if (!node) {
     return (
@@ -182,6 +342,28 @@ export function SelectedNodePanel({
         </div>
         <div className="nf-bottom-body nf-node-editor-placeholder">
           <p className="nf-muted">Select a node on the canvas to edit parameters and code.</p>
+        </div>
+      </section>
+    );
+  }
+
+  // Group/Component nodes: no configure panel — ports and name are edited directly on canvas
+  if (isGroupNode) {
+    const groupType = node.data.groupType as "group" | "component";
+    return (
+      <section className="nf-bottom-panel nf-bottom-editor nf-node-editor-empty">
+        <div className="nf-bottom-head">
+          <h2 className="nf-panel-title" style={{ color: "#7b1fa2" }}>
+            {groupType === "component" ? "Component" : "Group"}
+          </h2>
+        </div>
+        <div className="nf-bottom-body nf-node-editor-placeholder">
+          <p className="nf-muted" style={{ fontSize: 12 }}>
+            Click a port handle to add/remove ports. Double-click the label below the node to rename it. Double-click the node to enter its subflow.
+          </p>
+          <div style={{ marginTop: 12 }}>
+            <button type="button" className="nf-btn nf-btn-danger nf-btn-sm" onClick={onDelete} disabled={running}>Delete</button>
+          </div>
         </div>
       </section>
     );
@@ -199,16 +381,46 @@ export function SelectedNodePanel({
         <div className="nf-node-editor-scroll">
           <div className="nf-node-editor-section">
             <h3 className="nf-node-editor-h3">Parameters</h3>
-            <ParameterEditor
-              parameters={paramsList}
-              params={draftParams}
-              upstreamColumns={cols}
-              onChange={onDraftParams}
-              onUploadFile={async (file) => {
-                const res = await uploadCsv(file);
-                onDraftParams({ ...draftParams, file_path: res.file_path });
-              }}
-            />
+            {spec?.id === "geo_view" ? (
+              <>
+                {/* Layer styles accordion */}
+                <fieldset className="nf-field">
+                  <legend className="nf-field-label">Layer Styles</legend>
+                  <GeoLayerStylesEditor
+                    value={draftParams.layers}
+                    info={geoLayerInfo ?? { count: 1, columns: [], dtypes: [] }}
+                    onChange={(layers) => onDraftParams({ ...draftParams, layers })}
+                  />
+                </fieldset>
+                {/* Grouped param sections */}
+                <GeoViewParamsEditor params={draftParams} onChange={onDraftParams} />
+              </>
+            ) : spec?.id === "report_builder" ? (
+              <ReportBuilderEditor
+                params={draftParams}
+                imgPortCount={node?.data.inputCount ?? 1}
+                onChange={(patch) => onDraftParams({ ...draftParams, ...patch })}
+              />
+            ) : spec?.id === "join_tables" ? (
+              <JoinTablesEditor
+                params={draftParams}
+                leftColumns={cols}
+                rightColumns={colsRight}
+                onChange={onDraftParams}
+              />
+            ) : (
+              <ParameterEditor
+                parameters={paramsList}
+                params={draftParams}
+                upstreamColumns={cols}
+                geoLayerInfo={geoLayerInfo}
+                onChange={onDraftParams}
+                onUploadFile={async (file) => {
+                  const res = await uploadCsv(file);
+                  onDraftParams({ ...draftParams, file_path: res.file_path });
+                }}
+              />
+            )}
           </div>
           {aiCoding ? (
             <AICodingSection

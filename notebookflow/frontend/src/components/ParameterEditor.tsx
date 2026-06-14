@@ -1,4 +1,5 @@
 import type { ParameterSpec } from "../types";
+import { GeoLayerStylesEditor, type GeoLayerInfo } from "./GeoLayerStylesEditor";
 
 interface ParameterEditorProps {
   parameters: ParameterSpec[];
@@ -6,6 +7,8 @@ interface ParameterEditorProps {
   onChange: (next: Record<string, unknown>) => void;
   upstreamColumns: string[];
   onUploadFile: (file: File) => Promise<void>;
+  /** Per-input-port layer info for geo_layers parameters (GeoView). */
+  geoLayerInfo?: GeoLayerInfo;
 }
 
 export function ParameterEditor({
@@ -14,6 +17,7 @@ export function ParameterEditor({
   onChange,
   upstreamColumns,
   onUploadFile,
+  geoLayerInfo,
 }: ParameterEditorProps) {
   const setField = (name: string, value: unknown) => {
     onChange({ ...params, [name]: value });
@@ -24,6 +28,20 @@ export function ParameterEditor({
       {parameters.map((p) => {
         const key = p.name;
         const val = params[key];
+
+        if (p.type === "geo_layers") {
+          const info: GeoLayerInfo = geoLayerInfo ?? { count: 1, columns: [], dtypes: [] };
+          return (
+            <fieldset key={key} className="nf-field">
+              <legend className="nf-field-label">Layer Styles</legend>
+              <GeoLayerStylesEditor
+                value={val}
+                info={info}
+                onChange={(layers) => setField(key, layers)}
+              />
+            </fieldset>
+          );
+        }
 
         if (p.type === "file") {
           return (
