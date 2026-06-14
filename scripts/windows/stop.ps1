@@ -1,4 +1,5 @@
 # Stop FlowX dev servers on configured ports (8000 / 5173 by default).
+# Kills uvicorn --reload orphans that can stack up on Windows and serve stale code.
 $ErrorActionPreference = "SilentlyContinue"
 $Here = $PSScriptRoot
 $ConfigPath = Join-Path $Here "config.json"
@@ -11,19 +12,40 @@ if (Test-Path $ConfigPath) {
     if ($null -ne $raw.frontend_port) { $fePort = [int]$raw.frontend_port }
 }
 
-foreach ($port in @($bePort, $fePort)) {
+function Stop-ByCommandLine([string]$Pattern) {
+    $n = 0
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and $_.CommandLine -match $Pattern
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        $n++
+    }
+    return $n
+}
+
+function Stop-PortListeners([int]$Port) {
     $killed = 0
-    foreach ($round in 1..2) {
-        $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-        foreach ($c in $conns) {
-            if ($c.OwningProcess -gt 0) {
-                Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            if ($_.OwningProcess -gt 0) {
+                Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
                 $killed++
             }
         }
-        if ($round -eq 1) { Start-Sleep -Milliseconds 400 }
-    }
-    Write-Host ('[FlowX] Port ' + $port + ' - stopped ' + $killed + ' process(es).')
+    return $killed
 }
 
+# uvicorn --reload spawns multiprocessing workers; they keep serving stale code after git pull.
+$uv = Stop-ByCommandLine 'uvicorn app\.main:app'
+$spawn = Stop-ByCommandLine 'multiprocessing\.spawn import spawn_main'
+$vite = Stop-ByCommandLine ('vite.*--port[\s=]+' + $fePort)
+
+$portKilled = 0
+foreach ($round in 1..6) {
+    $portKilled += Stop-PortListeners $bePort
+    $portKilled += Stop-PortListeners $fePort
+    Start-Sleep -Milliseconds 350
+}
+
+Write-Host ('[FlowX] Stopped uvicorn=' + $uv + ' spawn_workers=' + $spawn + ' vite=' + $vite + ' port listeners=' + $portKilled + '.')
 Write-Host '[FlowX] Done.'

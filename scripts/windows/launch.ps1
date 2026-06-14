@@ -183,8 +183,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Info "Stopping listeners on ports $bePort and $fePort (if any)..."
-Stop-Port $bePort
-Stop-Port $fePort
+& (Join-Path $Here "stop.ps1") | Out-Null
 Start-Sleep -Seconds 1
 
 Write-Info "Installing backend dependencies..."
@@ -207,7 +206,8 @@ if (-not (Test-Path (Join-Path $Frontend "node_modules"))) {
     }
 }
 
-$beArgs = "-m uvicorn app.main:app --reload --host 127.0.0.1 --port $bePort"
+# No --reload: avoids orphaned reloader processes on Windows that keep serving old node_specs.
+$beArgs = "-m uvicorn app.main:app --host 127.0.0.1 --port $bePort"
 Write-Info "Starting backend (hidden)..."
 Start-Process -FilePath $py -ArgumentList $beArgs.Split(" ") `
     -WorkingDirectory $Backend -WindowStyle Hidden

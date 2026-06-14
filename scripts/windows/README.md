@@ -8,6 +8,17 @@ Hidden backend + frontend, opens FlowX in an Edge/Chrome **app window** (no tabs
 1. Copy `config.json.example` → `config.json` (default conda env: `geoxai`).
 2. Double-click **`Launch FlowX.vbs`** (silent) or **`Launch FlowX.bat`** (console).
 
+Use this if the node library looks outdated (e.g. still shows **GeoView (PNG)** after `git pull`).
+
+## If node library is stale after pull
+
+```powershell
+.\stop.ps1
+.\launch.ps1
+```
+
+Then hard-refresh the FlowX window (Ctrl+Shift+R). Old uvicorn `--reload` orphans on Windows can keep serving an outdated `/api/nodes`.
+
 ## Stop manually
 
 ```powershell
