@@ -1,7 +1,7 @@
 # Handoff — GeoFlow / NotebookFlow
 
-> 更新日期:2026-06-11
-> 当前版本:**v0.5.8**(HEAD `0b76723`,main 分支,推送由用户手动执行)
+> 更新日期:2026-06-13
+> 当前版本:**v0.6**(Group/Component 元节点,**尚未提交**;上一个已提交版本 v0.5.8 `0b76723`,main 分支,推送由用户手动执行)
 > 测试入口:Windows 双击 `start.bat`(conda env `geoxai`)/ macOS `./start.sh`;
 > 后端测试 `run_tests.bat` 或 `cd notebookflow/backend && python tests/test_smoke.py`(9 项,全部通过)。
 
@@ -11,7 +11,41 @@ GeoFlow 是 KNIME 式的本地优先可视化工作流平台(FastAPI 后端 + Re
 
 ---
 
-## 一、版本演进总览(v0.3 → v0.5.8)
+## 一、版本演进总览(v0.3 → v0.6)
+
+### v0.6 — Group/Component 元节点(本次会话,**未提交**)
+KNIME 式元节点:**Group**(虚线框)/ **Component**(实线框),每个节点 `data.subflow` 保存子流程
+(`SubflowData`:nodes/edges/input_map/output_map/direct_input_map/direct_output_map)。
+子流程内部用边界条 `group_input_bar`(gib)/ `group_output_bar`(gob),代码为空,执行时跳过。
+
+- **打包/展开**:选中多节点右键 Make Group/Component → `createGroupFromSelection`(端口数对应去重后的出/入边;
+  位置以质心为原点存相对坐标);展开 `expandGroup` 用 direct_*_map 还原外部连线。
+  **make 时务必保留被打包节点的 `group_type`/`subflow`**(否则嵌套元节点丢子流程,进不去)。
+- **画布内端口编辑(无 configure 面板)**:点 GroupNode 端口三角 → +/− 浮窗
+  (`handleAddGroupInput/Output`、`handleRemoveGroupInput/Output`)。增删会同步:外层 `inputHandles`/
+  `outputHandles`、子流程 bar 的 `portCount`、对应 `input_map`/`output_map` 条目、悬空连线。
+  **0 端口的组首次加端口时会自动创建 gib/gob 节点**(之前缺失导致内部数据出不去)。
+- **命名**:双击节点下方注释编辑(写入 `annotation`,与普通节点一致,回车换行、点外部提交)。
+- **子层运行(关键)**:进入子流程后可单独运行内部节点。后端
+  `run_node_in_group(root_nodes, root_edges, group_path, inner_node_id, …)` + `POST /api/node/run-in-group`
+  (`GroupNodeRunRequest`,`group_path` 是从根到目标子流程的 group id 链)。**每次从外层图重新计算组输入**
+  (沿 group_path 逐层跑上游、读入边数据、注入到该层 gib),**无需先跑整图**;逐层把 bar_data 向下传递
+  以支持任意深度嵌套。`run_workflow`/`run_single_node` 新增 `no_clear` 保留 store。
+- **多输出收集修复**:`run_workflow` 组执行遍历**全部** `output_map`,各输出按 handle 存
+  (`store.put_df(nid, df, g_handle)`,额外的进 `extra_dfs`);并把子流程节点输出 merge 进返回值,
+  使进入子流程时内部节点能显示已运行结果(绿色+数据)。
+- **导航不重置**:进入/退出组**不再清空 `nodeOutputs`**(节点 id 全局唯一,内外输出共存);
+  节点 status 由是否有输出推导(`statusFor`)。**每层视图位置记忆**:进入时存父层 viewport 到栈条目
+  `parentViewport`,退出按原样恢复;子流程 viewport 存 `subflowViewportsRef`(按 group id),
+  再次进入还原上次位置(`groupBridge` 加 getViewport/setViewport/fitView)。
+- **bar 端口外观**:三角贴边(沿用 `.nf-handle-in/out` CSS),竖向按 `(idx+1.5)/(n+2)` 均匀居中分布
+  (与普通节点一致);console 里输入条标签 "Input 1/2"、输出条 "Output 1/2"(`portTabPrefix`)。
+- **Join Tables 编辑器**:`right_on` 改为从**第二端口**(df_in_2)列名下拉(非文件选择);
+  左右输出列可折叠勾选(默认全选)。`JoinTablesEditor`(SelectedNodePanel.tsx)。
+- **默认画布缩放**:`fitView` 封顶 `maxZoom: 1.15`(≈最大 2× 缩小 3 档),小工作流不再一打开就最大放大。
+- 顺手修复 `notebook_exporter.py` 把 `_upstream_sources`(3 元组)误当 2 元组解包导致导出崩溃。
+
+### v0.3 — 引擎与 AI 质量(`3b81ab5`)
 
 ### v0.3 — 引擎与 AI 质量(`3b81ab5`)
 - **增量执行引擎**:节点指纹 = sha256(类型+代码+参数+输入文件 mtime/size+全部上游指纹链);
@@ -116,10 +150,10 @@ notebook 导入分支 DAG 端到端、read_csv 参数提取、**多输入端口(
 ### 后端 `notebookflow/backend/app/`
 | 文件 | 内容 |
 |------|------|
-| `workflow_engine.py` | 拓扑执行 + 多端口收集 + 指纹增量 + dtypes 摘要 |
+| `workflow_engine.py` | 拓扑执行 + 多端口收集 + 指纹增量 + dtypes 摘要 + **组/嵌套执行 + `run_node_in_group` + `no_clear`** |
 | `data_store.py` / `executors.py` | ResultCache(LRU)/ 编译缓存 + CoW + 多输入命名空间 |
-| `node_specs.py` | 34 内置节点(代码+spec+markdown 描述) |
-| `models.py` | AIConfig、NodeSpec(description/dynamic_inputs/cwl_hints)、annotation 等 |
+| `node_specs.py` | 34 内置节点(代码+spec+markdown 描述);**join_tables 用 column_right + 列筛选;gib/gob bar 节点 spec** |
+| `models.py` | AIConfig、NodeSpec、annotation、**SingleNodeRunRequest.no_clear、GroupNodeRunRequest** 等 |
 | `services/planner.py` | 目录感知 LLM 规划(ai_config 覆盖) |
 | `services/workflow_composer.py` / `node_retriever.py` / `temp_node_factory.py` | library-first 组合链 |
 | `services/notebook_standardizer.py` | ipynb → 工作流(AST 数据流) |
@@ -132,16 +166,20 @@ notebook 导入分支 DAG 端到端、read_csv 参数提取、**多输入端口(
 ### 前端 `notebookflow/frontend/src/`
 | 文件 | 内容 |
 |------|------|
-| `App.tsx` | 全局状态/布局(三栏折叠)/复制粘贴/右键菜单/保存导出 |
+| `App.tsx` | 全局状态/布局/复制粘贴/右键菜单/保存导出;**组打包/进出(enter/exitGroup)、端口增删、`buildGroupNode`、`buildRootPayload`、`barOutputs`、每层 viewport 记忆** |
 | `components/LeftPanel.tsx` | SideRail 图标栏 + Nodes/Info/Workspace/AI/Logs 面板 |
 | `components/FlowNode.tsx` | 三角端口、动态端口浮窗、上名下注释布局 |
+| `components/GroupNode.tsx` | 元节点渲染(虚/实线框)、端口 +/− 浮窗、可编辑注释、双击进入子流程 |
+| `components/GroupBarNode.tsx` | 子流程 IN/OUT 边界条,三角贴边 + `(idx+1.5)/(n+2)` 均匀分布 |
+| `groupBridge.ts` | 组件↔App 桥:enterGroup + getViewport/setViewport/fitView |
 | `components/AnnotationNode.tsx` | 画布文本框(NodeResizer+样式工具栏) |
-| `components/WorkflowCanvas.tsx` | 拖放、框选、右键菜单转发、portActions context |
-| `components/SelectedNodePanel.tsx` | 参数/AI Coding/代码三模式/底部操作栏 |
-| `components/OutputPreview.tsx` | 结果区(表格 dtype 列头/HTML iframe/Expand) |
+| `components/WorkflowCanvas.tsx` | 拖放、框选、右键菜单转发、portActions context、**viewport 注册、fitView maxZoom 封顶** |
+| `components/SelectedNodePanel.tsx` | 参数/AI Coding/代码三模式/底部操作栏;**JoinTablesEditor、组节点无 configure 提示** |
+| `components/OutputPreview.tsx` | 结果区(表格 dtype 列头/HTML iframe/Expand/**多端口 tab portTabPrefix**) |
+| `api/client.ts` | API 封装:**runSingleNode(no_clear)、runNodeInGroup** |
 | `components/WorkspacePanel.tsx` / `FolderPickerModal.tsx` / `SaveWorkflowModal.tsx` | Workspace 浏览/选择/保存导出对话框 |
 | `components/AIStudioPage.tsx` / `AISettingsPanel.tsx` | AI 工具页 / 共享 provider 设置 |
-| `components/CanvasContextMenu.tsx` / `Markdown.tsx` / `portActions.ts` | 右键菜单 / md 渲染 / 节点级动作 context |
+| `components/CanvasContextMenu.tsx` / `Markdown.tsx` / `portActions.ts` | 右键菜单 / md 渲染 / 节点级动作 context(含 group 端口动作) |
 
 ### 根目录
 `start.bat` / `start.sh` / `run_tests.bat`(一键脚本)、`docs/next-gen-architecture.md`(蓝图)、
@@ -162,6 +200,14 @@ notebook 导入分支 DAG 端到端、read_csv 参数提取、**多输入端口(
    截图强制出帧。这不是代码 bug。
 7. 浏览器永远拿不到文件夹绝对路径(安全模型),文件夹选择必须靠本地后端弹系统对话框。
 8. 旧保存的工作流 JSON 内嵌保存时的节点代码 —— 节点升级后(如 GeoMap 多图层)需从库重新添加。
+9. **组执行用独立 store / 子流程数据不持久** —— 单独跑子层节点要么会重置整图、要么 bar 拿不到数据。
+   解法:`run_node_in_group` 每次从外层重算组输入并注入 gib(`no_clear` 保留 store),**别**改成跑整图。
+10. **进入/退出组别清 `nodeOutputs`** —— 节点 id 全局唯一,清空会让整图"被重置"(状态/输出全没)。
+11. **嵌套元节点必须保留 `group_type`+`subflow`** —— `createGroupFromSelection`、`buildPayload`、
+    `buildGroupNode`(进入/恢复/展开复用)都要带上,否则内层组渲染成灰节点或进不去。
+12. **子层 bar 数据要逐层下传** —— `run_node_in_group` 下钻时若只在最后一层注入 bar_data,
+    2 层以上的中间 gib 拿不到数据(NoneType)。必须每层把 bar_data/overrides 传给下一层上游运行。
+13. **`fitView` 默认 maxZoom=2** —— 小工作流一打开就最大放大;用 `fitViewOptions.maxZoom` 封顶(现 1.15)。
 
 ---
 
